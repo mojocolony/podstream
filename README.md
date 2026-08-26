@@ -1,4 +1,4 @@
-# Podstream v0.1.6
+# Podstream v0.1.7
 
 A deliberately small podcast web app.
 
@@ -67,3 +67,8 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Fixed Enhance Voices muting playback by rebuilding the active audio element with CORS enabled before attaching the Web Audio graph.
 - Added fail-safe restoration to ordinary playback if a podcast host cannot be processed.
 - Resumes the AudioContext directly from the user action for better Safari/iOS compatibility.
+
+
+## v0.1.7
+
+- Replaced the text-based 15-second rewind/forward controls with the supplied custom arrow artwork.

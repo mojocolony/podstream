@@ -100,8 +100,8 @@ h1 { font-size:calc(25px + var(--font-bump)); margin:0; letter-spacing:-.03em; }
 .transport-buttons { display:flex; align-items:center; gap:8px; }
 .play-button { width:42px; height:42px; border-radius:50%; border:0; background:var(--accent); color:white; display:grid; place-items:center; cursor:pointer; box-shadow:0 2px 8px rgba(38,50,61,.12); }
 .play-button svg { width:19px; fill:currentColor; }
-.skip-icon { font-size:calc(24px + var(--font-bump)); line-height:1; position:relative; display:inline-flex; align-items:center; }
-.skip-icon small { position:absolute; font-size:calc(8px + var(--font-bump)); font-weight:800; left:50%; top:50%; transform:translate(-50%,-39%); }
+.skip-button { width:42px; height:42px; }
+.skip-icon-img { width:31px; height:31px; object-fit:contain; display:block; }
 .scrub-row { width:min(100%,560px); display:grid; grid-template-columns:38px 1fr 38px; gap:8px; align-items:center; }
 .time { color:var(--muted); font-size:calc(10px + var(--font-bump)); font-variant-numeric:tabular-nums; text-align:center; }
 input[type="range"] { accent-color:var(--accent); width:100%; }

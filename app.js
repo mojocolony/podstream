@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.6';
+  const APP_VERSION = '0.1.7';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
