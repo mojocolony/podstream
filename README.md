@@ -1,4 +1,4 @@
-# Podstream v0.1.2
+# Podstream v0.1.3
 
 A deliberately small podcast web app.
 
@@ -8,7 +8,7 @@ A deliberately small podcast web app.
 - Stream episodes — no downloads
 - Star podcasts and episodes
 - Skip back/forward 15 seconds
-- In Progress view
+- History view with In Progress and Recently Played sections
 - Cross-device subscriptions, stars and playback-position sync
 - Synced Enhance Voices preference
 - Enhance Voices using Web Audio EQ + compression
@@ -50,3 +50,8 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Sidebar simplified to Stream, Podcasts, Starred, and History.
 - History groups unfinished episodes under In Progress and other listening under Recently Played.
 - Refresh and Settings moved to the top bar; version number moved to the bottom of the sidebar.
+
+## v0.1.3
+- New Reader-inspired blue-grey palette anchored by `#e6ecf2`.
+- Softer blue navigation selection, primary controls, player controls, panels and focus states.
+- Keeps Podstream's layout and functionality unchanged.
