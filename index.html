@@ -15,7 +15,7 @@
         <div class="brand-mark" aria-hidden="true"><i data-lucide="radio"></i></div>
         <div>
           <div class="brand">Podstream</div>
-          <div class="version">v0.1.0</div>
+          <div class="version">v0.1.1</div>
         </div>
       </div>
 
@@ -101,19 +101,17 @@
       <div class="dialog-head">
         <div>
           <h2>Settings</h2>
-          <p>Connect Supabase for cross-device sync.</p>
+          <p>Sign in for cross-device sync.</p>
         </div>
         <button class="icon-button" value="cancel" aria-label="Close"><i data-lucide="x"></i></button>
       </div>
-      <label>Supabase URL<input id="supabaseUrlInput" type="url" placeholder="https://xxxx.supabase.co" /></label>
-      <label>Supabase anon key<input id="supabaseKeyInput" type="password" placeholder="eyJ..." /></label>
       <label>Email<input id="emailInput" type="email" placeholder="you@example.com" /></label>
-      <div class="settings-note">Without Supabase, Podstream still works locally in this browser. With Supabase, subscriptions, stars and play positions sync across devices.</div>
+      <div class="settings-note">Podstream uses your private synced account for subscriptions, stars, playback position and voice-enhancement preference. Podcast audio itself is streamed directly from the publisher.</div>
       <div class="dialog-actions split">
         <button class="secondary-button" type="button" id="signOutButton">Sign out</button>
         <div class="right-actions">
           <button class="secondary-button" value="cancel">Close</button>
-          <button class="primary-button" type="button" id="saveSettingsButton">Save &amp; sign in</button>
+          <button class="primary-button" type="button" id="saveSettingsButton">Send sign-in link</button>
         </div>
       </div>
       <div id="authStatus" class="status"></div>
@@ -122,7 +120,7 @@
 
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   <script src="app.js"></script>
 </body>

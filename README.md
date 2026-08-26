@@ -1,48 +1,39 @@
-# Podstream v0.1.0
+# Podstream v0.1.1
 
 A deliberately small podcast web app.
 
-## What it does
+## Features
 
 - Subscribe by RSS feed URL
 - Stream episodes — no downloads
 - Star podcasts and episodes
 - Skip back/forward 15 seconds
 - In Progress view
-- Cross-device playback position sync through Supabase
-- Enhance Voices toggle using Web Audio EQ + compression
+- Cross-device subscriptions, stars and playback-position sync
+- Synced Enhance Voices preference
+- Enhance Voices using Web Audio EQ + compression
 
-## Run locally
+## Backend
 
-Because podcast feeds and audio are fetched from other domains, use a small local server rather than opening `index.html` directly:
+Podstream is connected to the existing shared personal Supabase project, but its application data is logically isolated from the other apps:
 
-```bash
-python3 -m http.server 8080
-```
+- `podstream_subscriptions`
+- `podstream_playback_positions`
+- `podstream_stars`
+- `podstream_settings`
+- Edge Function: `podstream-fetch-feed`
 
-Then open `http://localhost:8080`.
+All four tables have Row Level Security enabled and are restricted to the signed-in user's own rows. The GitHub Pages client contains only the project's public/publishable key; no secret or service-role key is included.
 
-## Supabase setup
+## Sign in
 
-1. Create a Supabase project.
-2. In **SQL Editor**, run `supabase/schema.sql`.
-3. Deploy the RSS proxy Edge Function:
+Open **Settings**, enter your email, and choose **Send sign-in link**. Once signed in, Podstream can securely fetch RSS feeds and synchronize your library across devices.
 
-```bash
-supabase functions deploy fetch-feed --no-verify-jwt
-```
-
-4. In Supabase Authentication, enable Email / Magic Link sign-in.
-5. Add your GitHub Pages URL (or local URL during testing) to the allowed redirect URLs.
-6. Open Podstream → **Settings** and enter:
-   - Supabase project URL
-   - Supabase anon key
-   - Your email
-7. Click **Save & sign in**, then use the magic link.
+For GitHub Pages magic-link sign-in, `https://mojocolony.github.io/podstream/` must be present in the Supabase Auth redirect allow-list.
 
 ## GitHub Pages
 
-The root files are static and can be deployed directly to GitHub Pages. The Supabase Edge Function handles RSS fetching, which avoids browser CORS problems.
+Copy the root files of this folder into the `podstream` repository. `index.html` should remain at the repository root.
 
 ## Enhance Voices
 
@@ -52,8 +43,4 @@ The toggle uses browser Web Audio processing:
 - gentle presence lift around 2.6 kHz
 - moderate dynamic compression
 
-It does not download or rewrite audio. Processing occurs while audio streams.
-
-## Important audio caveat
-
-Some podcast hosts do not include permissive CORS headers on their MP3 files. Browsers may still play those files normally, but Web Audio processing can be blocked for such streams. In that case playback should still work, while **Enhance Voices** may not. A later build can add an optional audio relay through Supabase if needed.
+Processing occurs locally while audio streams. Some podcast hosts do not permit the browser CORS access needed for Web Audio processing; on those streams normal playback continues, but Enhance Voices is unavailable.

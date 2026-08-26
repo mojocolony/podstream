@@ -1,7 +1,10 @@
 (() => {
-  const APP_VERSION = '0.1.0';
+  const APP_VERSION = '0.1.1';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
+  const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_70RugEcKQxZWUa5eQfmyeg_y7AkVz9V';
+  const FEED_FUNCTION = 'podstream-fetch-feed';
   const state = {
     view: 'stream',
     subscriptions: [],
@@ -33,17 +36,26 @@
     bindEvents();
     render();
     lucide.createIcons();
-    await initSupabaseFromSettings();
+    await initSupabase();
     if (state.remoteReady) await hydrateRemote();
   }
 
   function cacheEls() {
-    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','settingsDialog','settingsButton','syncButton','menuButton','sidebar','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','supabaseUrlInput','supabaseKeyInput','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
+    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','settingsDialog','settingsButton','syncButton','menuButton','sidebar','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
   }
 
   function bindEvents() {
     document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
-    els.addPodcastButton.addEventListener('click', () => { els.feedError.classList.add('hidden'); els.feedUrlInput.value=''; els.addPodcastDialog.showModal(); });
+    els.addPodcastButton.addEventListener('click', () => {
+      if (!state.remoteReady) {
+        openSettings();
+        els.authStatus.textContent = 'Sign in before adding a podcast.';
+        return;
+      }
+      els.feedError.classList.add('hidden');
+      els.feedUrlInput.value = '';
+      els.addPodcastDialog.showModal();
+    });
     els.addPodcastForm.addEventListener('submit', handleAddPodcast);
     els.settingsButton.addEventListener('click', openSettings);
     els.saveSettingsButton.addEventListener('click', saveSettingsAndSignIn);
@@ -228,14 +240,13 @@
   }
 
   async function fetchFeed(url) {
-    const settings = getSettings();
-    if (settings.url && settings.key) {
-      const endpoint = `${settings.url.replace(/\/$/,'')}/functions/v1/fetch-feed?url=${encodeURIComponent(url)}`;
-      const res = await fetch(endpoint, { headers: { apikey: settings.key, Authorization: `Bearer ${settings.key}` } });
-      if (!res.ok) throw new Error(`Feed request failed (${res.status}). Deploy the included fetch-feed Edge Function.`);
-      return res.json();
+    if (!state.supabase || !state.remoteReady) {
+      throw new Error('Sign in first so Podstream can securely fetch podcast feeds and sync your library.');
     }
-    throw new Error('Connect Supabase first so Podstream can fetch RSS feeds without browser CORS restrictions.');
+    const { data, error } = await state.supabase.functions.invoke(FEED_FUNCTION, { body: { url } });
+    if (error) throw new Error(error.message || 'Could not fetch that podcast feed.');
+    if (data?.error) throw new Error(data.error);
+    return data;
   }
 
   function upsertFeed(feed, feedUrl) {
@@ -263,6 +274,7 @@
   }
 
   async function refreshAllFeeds() {
+    if (!state.remoteReady) { openSettings(); els.authStatus.textContent = 'Sign in before refreshing feeds.'; return; }
     if (!state.subscriptions.length) return toast('No subscriptions yet');
     els.syncButton.disabled = true;
     try {
@@ -384,6 +396,7 @@
       saveLocal();
       applyEnhanceState();
     }
+    await syncSettingsToRemote();
     renderPlayer();
   }
 
@@ -427,9 +440,7 @@
 
   function openSettings() {
     const s = getSettings();
-    els.supabaseUrlInput.value = s.url || '';
-    els.supabaseKeyInput.value = s.key || '';
-    els.emailInput.value = s.email || '';
+    els.emailInput.value = state.user?.email || s.email || '';
     els.authStatus.textContent = state.user ? `Signed in as ${state.user.email}` : 'Not signed in.';
     els.settingsDialog.showModal();
   }
@@ -439,28 +450,38 @@
   }
 
   async function saveSettingsAndSignIn() {
-    const settings = { url: els.supabaseUrlInput.value.trim(), key: els.supabaseKeyInput.value.trim(), email: els.emailInput.value.trim() };
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    await initSupabaseFromSettings();
-    if (!state.supabase || !settings.email) { els.authStatus.textContent = 'Saved locally. Add an email to sign in.'; return; }
-    els.authStatus.textContent = 'Sending magic link…';
-    const { error } = await state.supabase.auth.signInWithOtp({ email: settings.email, options: { emailRedirectTo: location.href.split('#')[0] } });
-    els.authStatus.textContent = error ? error.message : 'Magic link sent. Open it on this device to finish signing in.';
+    const email = els.emailInput.value.trim();
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ email }));
+    if (!state.supabase || !email) { els.authStatus.textContent = 'Enter your email to sign in.'; return; }
+    if (state.user?.email?.toLowerCase() === email.toLowerCase()) {
+      els.authStatus.textContent = `Already signed in as ${state.user.email}`;
+      return;
+    }
+    els.authStatus.textContent = 'Sending sign-in link…';
+    const redirectTo = `${location.origin}${location.pathname}`;
+    const { error } = await state.supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: redirectTo, shouldCreateUser: true },
+    });
+    els.authStatus.textContent = error ? error.message : 'Sign-in link sent. Open it to finish signing in.';
   }
 
-  async function initSupabaseFromSettings() {
-    const s = getSettings();
-    if (!s.url || !s.key || !window.supabase?.createClient) return;
+  async function initSupabase() {
+    if (!window.supabase?.createClient) return;
     try {
-      state.supabase = window.supabase.createClient(s.url, s.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
-      const { data } = await state.supabase.auth.getSession();
+      state.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      });
+      const { data, error } = await state.supabase.auth.getSession();
+      if (error) throw error;
       state.user = data.session?.user || null;
       state.remoteReady = !!state.user;
-      state.supabase.auth.onAuthStateChange(async (_event, session) => {
-        state.user = session?.user || null; state.remoteReady = !!state.user;
-        if (state.remoteReady) await hydrateRemote();
+      state.supabase.auth.onAuthStateChange((_event, session) => {
+        state.user = session?.user || null;
+        state.remoteReady = !!state.user;
+        if (state.remoteReady) setTimeout(() => hydrateRemote(), 0);
       });
-    } catch (e) { console.warn(e); }
+    } catch (e) { console.warn('Supabase initialization failed', e); }
   }
 
   async function signOut() {
@@ -472,44 +493,104 @@
   async function hydrateRemote() {
     if (!state.remoteReady) return;
     try {
-      const [{ data: subs }, { data: plays }, { data: stars }] = await Promise.all([
-        state.supabase.from('subscriptions').select('*').order('created_at'),
-        state.supabase.from('playback_positions').select('*'),
-        state.supabase.from('stars').select('*'),
+      const [subsRes, playsRes, starsRes, settingsRes] = await Promise.all([
+        state.supabase.from('podstream_subscriptions').select('*').order('created_at'),
+        state.supabase.from('podstream_playback_positions').select('*'),
+        state.supabase.from('podstream_stars').select('*'),
+        state.supabase.from('podstream_settings').select('*').maybeSingle(),
       ]);
-      if (subs?.length) {
-        for (const s of subs) {
-          if (!state.subscriptions.find(x => x.feedUrl === s.feed_url)) {
-            try { const feed = await fetchFeed(s.feed_url); upsertFeed(feed, s.feed_url); } catch (e) { console.warn(e); }
-          }
+      for (const result of [subsRes, playsRes, starsRes, settingsRes]) {
+        if (result.error) throw result.error;
+      }
+
+      const subs = subsRes.data || [];
+      const plays = playsRes.data || [];
+      const stars = starsRes.data || [];
+      const remoteSettings = settingsRes.data;
+
+      for (const sub of subs) {
+        if (!state.subscriptions.find(x => x.feedUrl === sub.feed_url)) {
+          try { const feed = await fetchFeed(sub.feed_url); upsertFeed(feed, sub.feed_url); } catch (e) { console.warn('Feed hydration failed', e); }
         }
       }
-      for (const p of plays || []) state.playback[p.episode_id] = { position:Number(p.position_seconds)||0, duration:Number(p.duration_seconds)||0, completed:!!p.completed, updatedAt:new Date(p.updated_at).getTime() };
-      for (const st of stars || []) {
+
+      for (const p of plays) {
+        const remote = {
+          position: Number(p.position_seconds) || 0,
+          duration: Number(p.duration_seconds) || 0,
+          completed: !!p.completed,
+          updatedAt: new Date(p.updated_at).getTime(),
+        };
+        const local = state.playback[p.episode_id];
+        if (!local || remote.updatedAt >= (local.updatedAt || 0)) state.playback[p.episode_id] = remote;
+        else await syncPlaybackToRemote(p.episode_id);
+      }
+
+      state.starredEpisodes = {};
+      state.starredShows = {};
+      for (const st of stars) {
         if (st.item_type === 'episode') state.starredEpisodes[st.item_id] = true;
         if (st.item_type === 'show') state.starredShows[st.item_id] = true;
       }
-      saveLocal(); render();
-    } catch (e) { console.warn('Remote hydration failed', e); }
+
+      if (remoteSettings) state.enhanceVoices = !!remoteSettings.enhance_voices;
+      else await syncSettingsToRemote();
+
+      saveLocal();
+      render();
+    } catch (e) {
+      console.warn('Remote hydration failed', e);
+      toast('Cloud sync could not be refreshed.');
+    }
   }
 
   async function syncSubscriptionToRemote(feedUrl, feed) {
     if (!state.remoteReady) return;
-    await state.supabase.from('subscriptions').upsert({ user_id: state.user.id, feed_url: feedUrl, title: feed.title || null, image_url: feed.image || null }, { onConflict: 'user_id,feed_url' });
+    const { error } = await state.supabase.from('podstream_subscriptions').upsert({
+      user_id: state.user.id,
+      feed_url: feedUrl,
+      title: feed.title || null,
+      image_url: feed.image || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,feed_url' });
+    if (error) console.warn('Subscription sync failed', error);
   }
 
   async function syncPlaybackToRemote(id) {
     if (!state.remoteReady || !id) return;
-    const p = state.playback[id]; if (!p) return;
-    await state.supabase.from('playback_positions').upsert({ user_id: state.user.id, episode_id:id, position_seconds:p.position, duration_seconds:p.duration, completed:p.completed, updated_at:new Date().toISOString() }, { onConflict:'user_id,episode_id' });
+    const p = state.playback[id];
+    if (!p) return;
+    const updatedAt = p.updatedAt || Date.now();
+    const { error } = await state.supabase.from('podstream_playback_positions').upsert({
+      user_id: state.user.id,
+      episode_id: id,
+      position_seconds: Math.max(0, Number(p.position) || 0),
+      duration_seconds: Math.max(0, Number(p.duration) || 0),
+      completed: !!p.completed,
+      updated_at: new Date(updatedAt).toISOString(),
+    }, { onConflict: 'user_id,episode_id' });
+    if (error) console.warn('Playback sync failed', error);
   }
 
   async function syncEpisodeStarToRemote(id) { await syncStar('episode', id, !!state.starredEpisodes[id]); }
   async function syncShowStarToRemote(id) { await syncStar('show', id, !!state.starredShows[id]); }
-  async function syncStar(type,id,on) {
+  async function syncStar(type, id, on) {
     if (!state.remoteReady) return;
-    if (on) await state.supabase.from('stars').upsert({ user_id:state.user.id, item_type:type, item_id:id }, { onConflict:'user_id,item_type,item_id' });
-    else await state.supabase.from('stars').delete().eq('user_id',state.user.id).eq('item_type',type).eq('item_id',id);
+    const query = state.supabase.from('podstream_stars');
+    const { error } = on
+      ? await query.upsert({ user_id: state.user.id, item_type: type, item_id: id }, { onConflict: 'user_id,item_type,item_id' })
+      : await query.delete().eq('user_id', state.user.id).eq('item_type', type).eq('item_id', id);
+    if (error) console.warn('Star sync failed', error);
+  }
+
+  async function syncSettingsToRemote() {
+    if (!state.remoteReady) return;
+    const { error } = await state.supabase.from('podstream_settings').upsert({
+      user_id: state.user.id,
+      enhance_voices: !!state.enhanceVoices,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+    if (error) console.warn('Settings sync failed', error);
   }
 
   function coverMarkup(src, alt) {
