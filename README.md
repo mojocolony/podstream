@@ -1,4 +1,4 @@
-# Podstream v0.1.12
+# Podstream v0.1.13
 
 A deliberately small podcast web app.
 
@@ -85,7 +85,11 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
 
-## v0.1.12
+## v0.1.13
+
+- Improved website-to-RSS discovery for podcast sites that do not expose a standard feed link in their HTML.
+- Added a validated podcast-directory fallback using the podcast name discovered from the website.
+- Improved Edge Function error handling so the Add Podcast dialog shows useful errors instead of the generic Supabase non-2xx message.
 
 - Add Podcast now accepts either a podcast website or a direct RSS feed URL.
 - Podstream discovers standard RSS/Atom feed declarations and likely feed links from podcast websites.

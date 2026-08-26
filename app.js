@@ -395,7 +395,17 @@
       throw new Error('Sign in first so Podstream can securely find podcast feeds and sync your library.');
     }
     const { data, error } = await state.supabase.functions.invoke(FEED_FUNCTION, { body: { url } });
-    if (error) throw new Error(error.message || 'Could not find a podcast feed at that address.');
+    if (error) {
+      let message = error.message || 'Could not find a podcast feed at that address.';
+      try {
+        const response = error.context;
+        if (response && typeof response.clone === 'function') {
+          const detail = await response.clone().json();
+          if (detail?.error) message = detail.error;
+        }
+      } catch { /* Keep the fallback message. */ }
+      throw new Error(message);
+    }
     if (data?.error) throw new Error(data.error);
     return data;
   }

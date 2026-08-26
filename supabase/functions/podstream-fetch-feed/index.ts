@@ -15,10 +15,10 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json().catch(() => ({}));
     const input = typeof body?.url === "string" ? body.url.trim() : "";
-    if (!input) return json({ error: "Missing url" }, 400);
+    if (!input) return json({ error: "Missing url" });
 
     const startUrl = normalizeUrl(input);
-    if (!startUrl) return json({ error: "Invalid URL" }, 400);
+    if (!startUrl) return json({ error: "Invalid URL" });
 
     const first = await safeFetchText(startUrl, "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html, */*;q=0.5");
 
@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!looksLikeHtml(first.text, first.contentType)) {
-      return json({ error: "No podcast feed found. Try pasting the RSS feed directly." }, 404);
+      return json({ error: "No podcast feed found. Try pasting the RSS feed directly." });
     }
 
     const candidateUrls = discoverFeedUrls(first.text, first.url).slice(0, MAX_CANDIDATES);
@@ -47,13 +47,24 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!feeds.length) {
-      return json({ error: "No podcast feed found. Try pasting the RSS feed directly." }, 404);
+      const directoryFeeds = await discoverViaPodcastDirectory(first.text, first.url);
+      for (const feed of directoryFeeds) {
+        if (!feeds.some((existing) => existing.feedUrl === feed.feedUrl)) feeds.push(feed);
+      }
+    }
+
+    // User-facing discovery failures are returned as JSON with HTTP 200 so the
+    // browser can display the useful message instead of Supabase's generic
+    // FunctionsHttpError text for non-2xx responses. Authentication failures
+    // still happen at the Supabase gateway before this code runs.
+    if (!feeds.length) {
+      return json({ error: "No podcast feed found. Try pasting the RSS feed directly." });
     }
     if (feeds.length === 1) return json(feeds[0]);
     return json({ choices: feeds.slice(0, 8) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Feed discovery failed";
-    return json({ error: message }, 500);
+    return json({ error: message });
   }
 });
 
@@ -90,7 +101,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.1.12 (+personal podcast reader)",
+          "user-agent": "Podstream/0.1.13 (+personal podcast reader)",
           accept,
         },
       });
@@ -183,6 +194,122 @@ function discoverFeedUrls(html: string, pageUrl: string) {
   }
 
   return candidates.sort((a, b) => b.score - a.score).map((item) => item.url);
+}
+
+
+function pagePodcastName(html: string, pageUrl: string) {
+  const metaCandidates = [
+    metaContent(html, "property", "og:site_name"),
+    metaContent(html, "property", "og:title"),
+    metaContent(html, "name", "twitter:title"),
+  ].filter(Boolean);
+  const titleTag = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
+  if (titleTag) metaCandidates.push(stripTags(titleTag));
+  try {
+    const host = new URL(pageUrl).hostname.replace(/^www\./i, "").split(".")[0];
+    if (host) metaCandidates.push(host);
+  } catch { /* ignore */ }
+
+  for (const candidate of metaCandidates) {
+    const cleaned = cleanPodcastName(candidate);
+    if (cleaned.length >= 3) return cleaned;
+  }
+  return "";
+}
+
+function metaContent(html: string, key: string, value: string) {
+  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0];
+    if ((htmlAttr(tag, key) || "").toLowerCase() === value.toLowerCase()) return decodeEntities(htmlAttr(tag, "content"));
+  }
+  return "";
+}
+
+function cleanPodcastName(value: string) {
+  let s = stripTags(value).replace(/\s+/g, " ").trim();
+  s = s.replace(/^(home|official site|podcast)\s*[|:\-–—]\s*/i, "");
+  s = s.replace(/\s*[|:\-–—]\s*(home|official site|podcast)$/i, "");
+  // Wix and similar sites often emit titles such as "Home | smartless".
+  const parts = s.split(/\s*[|]\s*/).filter(Boolean);
+  if (parts.length > 1) {
+    const nonGeneric = parts.filter((part) => !/^(home|episodes?|about|podcast)$/i.test(part.trim()));
+    if (nonGeneric.length) s = nonGeneric.sort((a, b) => b.length - a.length)[0].trim();
+  }
+  return s.trim();
+}
+
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function nameMatchScore(query: string, candidate: string) {
+  const q = normalizeName(query), c = normalizeName(candidate);
+  if (!q || !c) return 0;
+  if (q === c) return 100;
+  if (c.includes(q) || q.includes(c)) return 85;
+  const qTokens = new Set(q.split(" ").filter((t) => t.length > 2));
+  const cTokens = new Set(c.split(" ").filter((t) => t.length > 2));
+  if (!qTokens.size || !cTokens.size) return 0;
+  let shared = 0;
+  for (const token of qTokens) if (cTokens.has(token)) shared++;
+  return Math.round(100 * shared / Math.max(qTokens.size, cTokens.size));
+}
+
+async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
+  const query = pagePodcastName(html, pageUrl);
+  if (query.length < 3) return [];
+
+  try {
+    const endpoint = new URL("https://itunes.apple.com/search");
+    endpoint.searchParams.set("term", query);
+    endpoint.searchParams.set("media", "podcast");
+    endpoint.searchParams.set("entity", "podcast");
+    endpoint.searchParams.set("limit", "10");
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let response: Response;
+    try {
+      response = await fetch(endpoint.toString(), {
+        signal: controller.signal,
+        headers: { "user-agent": "Podstream/0.1.13 (+personal podcast reader)", "accept": "application/json" },
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) return [];
+    const payload = await response.json().catch(() => null);
+    const results = Array.isArray(payload?.results) ? payload.results : [];
+    const ranked = results
+      .map((result: any) => ({
+        feedUrl: typeof result?.feedUrl === "string" ? result.feedUrl : "",
+        name: String(result?.collectionName || result?.trackName || ""),
+        score: Math.max(
+          nameMatchScore(query, String(result?.collectionName || "")),
+          nameMatchScore(query, String(result?.trackName || "")),
+        ),
+      }))
+      .filter((item: any) => item.feedUrl && item.score >= 70)
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, 5);
+
+    const feeds: any[] = [];
+    for (const item of ranked) {
+      try {
+        const fetched = await safeFetchText(item.feedUrl, "application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.5");
+        if (!looksLikeFeed(fetched.text, fetched.contentType)) continue;
+        const feed = parseFeed(fetched.text, fetched.url);
+        if (!feed.episodes.length) continue;
+        // Validate the actual feed title as well as the directory listing so a
+        // broad website title cannot silently subscribe to an unrelated show.
+        if (nameMatchScore(query, feed.title || item.name) < 70) continue;
+        if (!feeds.some((existing) => existing.feedUrl === feed.feedUrl)) feeds.push(feed);
+      } catch { /* best effort */ }
+    }
+    return feeds;
+  } catch {
+    return [];
+  }
 }
 
 function htmlAttr(tag: string, name: string) {
