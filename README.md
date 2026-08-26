@@ -1,4 +1,4 @@
-# Podstream v0.1.11
+# Podstream v0.1.12
 
 A deliberately small podcast web app.
 
@@ -85,7 +85,7 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
 
-## v0.1.11
+## v0.1.12
 
 - Add Podcast now accepts either a podcast website or a direct RSS feed URL.
 - Podstream discovers standard RSS/Atom feed declarations and likely feed links from podcast websites.

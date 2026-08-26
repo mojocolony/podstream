@@ -90,7 +90,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.1.11 (+personal podcast reader)",
+          "user-agent": "Podstream/0.1.12 (+personal podcast reader)",
           accept,
         },
       });
