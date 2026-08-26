@@ -1,10 +1,10 @@
-# Podstream v0.1.10
+# Podstream v0.1.11
 
 A deliberately small podcast web app.
 
 ## Features
 
-- Subscribe by RSS feed URL
+- Subscribe using a podcast website or direct RSS feed URL
 - Stream episodes — no downloads
 - Star podcasts and episodes
 - Skip back/forward 15 seconds
@@ -83,3 +83,11 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 
 - Added desktop playback keyboard shortcuts: Space toggles play/pause; Left Arrow jumps back 15 seconds; Right Arrow jumps forward 15 seconds.
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
+
+
+## v0.1.11
+
+- Add Podcast now accepts either a podcast website or a direct RSS feed URL.
+- Podstream discovers standard RSS/Atom feed declarations and likely feed links from podcast websites.
+- Discovered feeds are validated before subscription.
+- If a website exposes multiple valid podcast feeds, Podstream presents a chooser instead of guessing.

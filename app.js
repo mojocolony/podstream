@@ -43,7 +43,7 @@
   }
 
   function cacheEls() {
-    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','settingsDialog','settingsButton','syncButton','menuButton','sidebar','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
+    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','settingsDialog','settingsButton','syncButton','menuButton','sidebar','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
   }
 
   function bindEvents() {
@@ -55,6 +55,8 @@
         return;
       }
       els.feedError.classList.add('hidden');
+      els.feedChoices.classList.add('hidden');
+      els.feedChoices.innerHTML = '';
       els.feedUrlInput.value = '';
       els.addPodcastDialog.showModal();
     });
@@ -65,7 +67,11 @@
         if (ev.target === dialog) dialog.close();
       });
       dialog.addEventListener('cancel', () => {
-        if (dialog === els.addPodcastDialog) els.feedError.classList.add('hidden');
+        if (dialog === els.addPodcastDialog) {
+          els.feedError.classList.add('hidden');
+          els.feedChoices.classList.add('hidden');
+          els.feedChoices.innerHTML = '';
+        }
       });
     });
     els.settingsButton.addEventListener('click', openSettings);
@@ -243,7 +249,7 @@
 
     if (!eps.length) {
       const copy = state.view === 'stream' && !state.subscriptions.length
-        ? ['No podcasts yet','Add a podcast RSS feed and its latest episodes will appear here.','rss']
+        ? ['No podcasts yet','Add a podcast website or RSS feed and its latest episodes will appear here.','rss']
         : state.view === 'starred'
         ? ['Nothing starred','Star an episode or podcast and it will appear here.','star']
         : ['Nothing here yet','Refresh your feeds to load episodes.','radio'];
@@ -305,7 +311,7 @@
 
   function renderSubscriptions() {
     if (!state.subscriptions.length) {
-      els.content.innerHTML = emptyMarkup('No subscriptions','Add a podcast using its RSS feed URL.','rss');
+      els.content.innerHTML = emptyMarkup('No subscriptions','Add a podcast using its website or RSS feed URL.','rss');
       return;
     }
     const subscriptions = [...state.subscriptions].sort((a, b) =>
@@ -328,26 +334,68 @@
     const url = els.feedUrlInput.value.trim();
     if (!url) return;
     els.feedError.classList.add('hidden');
+    els.feedChoices.classList.add('hidden');
+    els.feedChoices.innerHTML = '';
+    const submit = document.getElementById('addFeedSubmit');
+    if (submit) submit.disabled = true;
     try {
-      const feed = await fetchFeed(url);
-      upsertFeed(feed, url);
-      await syncSubscriptionToRemote(url, feed);
-      els.addPodcastDialog.close();
-      setView('stream');
-      toast('Podcast added');
+      const result = await fetchFeed(url);
+      if (Array.isArray(result?.choices) && result.choices.length > 1) {
+        renderFeedChoices(result.choices);
+        return;
+      }
+      const feed = Array.isArray(result?.choices) ? result.choices[0] : result;
+      if (!feed) throw new Error('No podcast feed found. Try pasting the RSS feed directly.');
+      await addDiscoveredFeed(feed);
     } catch (err) {
       console.error(err);
-      els.feedError.textContent = err.message || 'Could not read that feed.';
+      els.feedError.textContent = err.message || 'Could not find a podcast feed at that address.';
       els.feedError.classList.remove('hidden');
+    } finally {
+      if (submit) submit.disabled = false;
     }
+  }
+
+  function renderFeedChoices(choices) {
+    els.feedChoices.innerHTML = `<div class="feed-choice-heading">Choose a podcast feed</div>${choices.map((feed, index) => `
+      <button type="button" class="feed-choice" data-feed-choice="${index}">
+        ${coverMarkup(feed.image, feed.title)}
+        <span><strong>${esc(feed.title || 'Podcast')}</strong><small>${esc(feed.feedUrl || feed.id || '')}</small></span>
+      </button>`).join('')}`;
+    els.feedChoices.classList.remove('hidden');
+    els.feedChoices.querySelectorAll('[data-feed-choice]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const feed = choices[Number(button.dataset.feedChoice)];
+        if (!feed) return;
+        button.disabled = true;
+        try { await addDiscoveredFeed(feed); }
+        catch (err) {
+          console.error(err);
+          els.feedError.textContent = err.message || 'Could not add that podcast.';
+          els.feedError.classList.remove('hidden');
+          button.disabled = false;
+        }
+      });
+    });
+    lucide.createIcons();
+  }
+
+  async function addDiscoveredFeed(feed) {
+    const feedUrl = feed.feedUrl || feed.id;
+    if (!feedUrl) throw new Error('The discovered feed did not include a usable URL.');
+    upsertFeed(feed, feedUrl);
+    await syncSubscriptionToRemote(feedUrl, feed);
+    els.addPodcastDialog.close();
+    setView('stream');
+    toast('Podcast added');
   }
 
   async function fetchFeed(url) {
     if (!state.supabase || !state.remoteReady) {
-      throw new Error('Sign in first so Podstream can securely fetch podcast feeds and sync your library.');
+      throw new Error('Sign in first so Podstream can securely find podcast feeds and sync your library.');
     }
     const { data, error } = await state.supabase.functions.invoke(FEED_FUNCTION, { body: { url } });
-    if (error) throw new Error(error.message || 'Could not fetch that podcast feed.');
+    if (error) throw new Error(error.message || 'Could not find a podcast feed at that address.');
     if (data?.error) throw new Error(data.error);
     return data;
   }

@@ -24,7 +24,7 @@
       </nav>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-version">v0.1.10</div>
+        <div class="sidebar-version">v0.1.11</div>
       </div>
     </aside>
 
@@ -80,15 +80,16 @@
       <div class="dialog-head">
         <div>
           <h2>Add podcast</h2>
-          <p>Paste the podcast's RSS feed URL.</p>
+          <p>Paste a podcast website or RSS feed URL.</p>
         </div>
         <button class="icon-button" type="button" data-dialog-close aria-label="Close"><i data-lucide="x"></i></button>
       </div>
       <label>
-        RSS feed URL
-        <input id="feedUrlInput" type="url" placeholder="https://example.com/feed.xml" required />
+        Podcast website or RSS feed
+        <input id="feedUrlInput" type="text" inputmode="url" autocomplete="url" placeholder="https://example.com" required />
       </label>
       <div id="feedError" class="error hidden"></div>
+      <div id="feedChoices" class="feed-choices hidden" aria-live="polite"></div>
       <div class="dialog-actions">
         <button class="secondary-button" type="button" data-dialog-close>Cancel</button>
         <button class="primary-button" id="addFeedSubmit" value="default"><span>Add</span></button>
