@@ -1,4 +1,4 @@
-# Podstream v0.1.7
+# Podstream v0.1.8
 
 A deliberately small podcast web app.
 
@@ -69,6 +69,6 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Resumes the AudioContext directly from the user action for better Safari/iOS compatibility.
 
 
-## v0.1.7
+## v0.1.8
 
 - Replaced the text-based 15-second rewind/forward controls with the supplied custom arrow artwork.
