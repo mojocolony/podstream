@@ -1,4 +1,4 @@
-# Podstream v0.1.16
+# Podstream v0.1.17
 
 A deliberately small podcast web app.
 
@@ -85,9 +85,11 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
 
-## v0.1.16
+## v0.1.17
 
-- Add Podcast now automatically focuses the website/RSS field when the dialog opens.
+- Podcast descriptions now wrap to their full length on desktop instead of being truncated after three lines.
+- On screens 850px wide or narrower, descriptions remain clamped to four lines to keep the list compact.
+- Add Podcast automatically focuses the website/RSS field when the dialog opens.
 - Podcasts are sorted alphabetically while ignoring leading articles: A, An, and The.
 
 ## v0.1.15
