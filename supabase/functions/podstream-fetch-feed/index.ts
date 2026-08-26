@@ -101,7 +101,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.1.14 (+personal podcast reader)",
+          "user-agent": "Podstream/0.1.15 (+personal podcast reader)",
           accept,
         },
       });
@@ -272,7 +272,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.1.14 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.1.15 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
@@ -365,7 +365,7 @@ function parseRssFeed(xml: string, feedUrl: string) {
   const description = text(channel, ["itunes:summary", "description", "subtitle"]);
   const image = attr(channel, "itunes:image", "href") || text(channel, ["url"]) || attr(channel, "media:thumbnail", "url");
   const items = [...channel.matchAll(/<item\b[\s\S]*?<\/item>/gi)].map((match) => match[0]);
-  const episodes = items.slice(0, 150).map((item) => {
+  const episodes = items.map((item) => {
     const enclosure = attr(item, "enclosure", "url") || attr(item, "media:content", "url");
     const guid = text(item, ["guid"]);
     const episodeTitle = text(item, ["title"]);
@@ -386,7 +386,7 @@ function parseAtomFeed(xml: string, feedUrl: string) {
   const description = text(xml, ["subtitle", "summary"]);
   const image = text(xml, ["logo", "icon"]);
   const entries = [...xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)].map((match) => match[0]);
-  const episodes = entries.slice(0, 150).map((entry) => {
+  const episodes = entries.map((entry) => {
     const audioUrl = atomEnclosure(entry);
     const episodeTitle = text(entry, ["title"]);
     const id = text(entry, ["id"]);

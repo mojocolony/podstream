@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.14';
+  const APP_VERSION = '0.1.15';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -7,6 +7,7 @@
   const FEED_FUNCTION = 'podstream-fetch-feed';
   const state = {
     view: 'stream',
+    selectedPodcastId: null,
     subscriptions: [],
     episodes: {},
     playback: {},
@@ -215,23 +216,30 @@
 
   function setView(view) {
     state.view = view;
+    state.selectedPodcastId = null;
     document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     els.sidebar.classList.remove('open');
     render();
   }
 
   function render() {
-    const meta = {
+    let meta = {
       stream: ['Stream','Newest episodes from your subscriptions.'],
       podcasts: ['Podcasts','The podcasts you follow.'],
       starred: ['Starred','Episodes and podcasts you want to keep close.'],
       history: ['History','What you have been listening to.'],
     }[state.view];
+    if (state.view === 'podcasts' && state.selectedPodcastId) {
+      const selected = state.subscriptions.find(s => s.id === state.selectedPodcastId);
+      if (selected) meta = [selected.title || 'Podcast', 'Episodes'];
+      else state.selectedPodcastId = null;
+    }
     els.viewTitle.textContent = meta[0];
     els.viewSubtitle.textContent = meta[1];
     els.addPodcastButton.style.display = 'inline-flex';
 
-    if (state.view === 'podcasts') renderSubscriptions();
+    if (state.view === 'podcasts' && state.selectedPodcastId) renderPodcastEpisodes(state.selectedPodcastId);
+    else if (state.view === 'podcasts') renderSubscriptions();
     else if (state.view === 'history') renderHistory();
     else renderEpisodesView();
     renderPlayer();
@@ -321,7 +329,7 @@
     const subscriptions = [...state.subscriptions].sort((a, b) =>
       (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true })
     );
-    els.content.innerHTML = `<div class="subscription-list">${subscriptions.map(s => `<article class="subscription-row">
+    els.content.innerHTML = `<div class="subscription-list">${subscriptions.map(s => `<article class="subscription-row" data-open-show="${escAttr(s.id)}" tabindex="0" role="button" aria-label="Open ${escAttr(s.title)} episodes">
       ${coverMarkup(s.image, s.title)}
       <div class="subscription-main">
         <div class="subscription-title">${esc(s.title)}</div>
@@ -331,10 +339,53 @@
       <div class="subscription-actions">
         <button class="icon-button star-show ${state.starredShows[s.id] ? 'active':''}" data-star-show="${escAttr(s.id)}" aria-label="Star podcast" title="Star podcast"><i data-lucide="star"></i></button>
         <button class="icon-button remove-show" data-remove-show="${escAttr(s.id)}" aria-label="Remove podcast" title="Remove podcast"><i data-lucide="trash-2"></i></button>
+        <span class="subscription-open-icon" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
       </div>
     </article>`).join('')}</div>`;
-    els.content.querySelectorAll('[data-star-show]').forEach(el => el.addEventListener('click', () => toggleStarShow(el.dataset.starShow)));
-    els.content.querySelectorAll('[data-remove-show]').forEach(el => el.addEventListener('click', () => removeSubscription(el.dataset.removeShow)));
+    els.content.querySelectorAll('[data-open-show]').forEach(el => {
+      const open = () => openPodcast(el.dataset.openShow);
+      el.addEventListener('click', open);
+      el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
+    });
+    els.content.querySelectorAll('[data-star-show]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); toggleStarShow(el.dataset.starShow); }));
+    els.content.querySelectorAll('[data-remove-show]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); removeSubscription(el.dataset.removeShow); }));
+  }
+
+  function openPodcast(showId) {
+    if (!state.subscriptions.some(s => s.id === showId)) return;
+    state.selectedPodcastId = showId;
+    render();
+  }
+
+  function renderPodcastEpisodes(showId) {
+    const sub = state.subscriptions.find(s => s.id === showId);
+    if (!sub) {
+      state.selectedPodcastId = null;
+      renderSubscriptions();
+      return;
+    }
+    const episodes = Object.values(state.episodes)
+      .filter(e => e.showId === showId)
+      .sort((a,b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+
+    const body = episodes.length
+      ? `<div class="episode-list">${episodes.map(episodeMarkup).join('')}</div>`
+      : emptyMarkup('No episodes loaded','Refresh feeds to load episodes for this podcast.','radio');
+
+    els.content.innerHTML = `<div class="podcast-detail-head">
+      <button class="secondary-button podcast-back-button" type="button" id="podcastBackButton"><i data-lucide="arrow-left"></i><span>Back to Podcasts</span></button>
+      <div class="podcast-detail-summary">
+        ${coverMarkup(sub.image, sub.title)}
+        <div>
+          ${sub.description ? `<p>${esc(sub.description)}</p>` : ''}
+          <div class="subscription-meta">${episodes.length} episode${episodes.length === 1 ? '' : 's'} loaded</div>
+        </div>
+      </div>
+    </div>${body}`;
+
+    document.getElementById('podcastBackButton')?.addEventListener('click', () => { state.selectedPodcastId = null; render(); });
+    els.content.querySelectorAll('[data-play]').forEach(el => el.addEventListener('click', () => playEpisode(el.dataset.play)));
+    els.content.querySelectorAll('[data-star-episode]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); toggleStarEpisode(el.dataset.starEpisode); }));
   }
 
   async function removeSubscription(showId) {
