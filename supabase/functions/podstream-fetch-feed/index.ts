@@ -101,7 +101,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.1.13 (+personal podcast reader)",
+          "user-agent": "Podstream/0.1.14 (+personal podcast reader)",
           accept,
         },
       });
@@ -272,7 +272,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.1.13 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.1.14 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
@@ -362,6 +362,7 @@ function parseFeed(xml: string, feedUrl: string) {
 function parseRssFeed(xml: string, feedUrl: string) {
   const channel = xml.match(/<channel\b[\s\S]*?<\/channel>/i)?.[0] || xml;
   const title = text(channel, ["title"]);
+  const description = text(channel, ["itunes:summary", "description", "subtitle"]);
   const image = attr(channel, "itunes:image", "href") || text(channel, ["url"]) || attr(channel, "media:thumbnail", "url");
   const items = [...channel.matchAll(/<item\b[\s\S]*?<\/item>/gi)].map((match) => match[0]);
   const episodes = items.slice(0, 150).map((item) => {
@@ -377,11 +378,12 @@ function parseRssFeed(xml: string, feedUrl: string) {
       image: attr(item, "itunes:image", "href") || attr(item, "media:thumbnail", "url") || image,
     };
   }).filter((episode) => episode.audioUrl);
-  return { id: feedUrl, feedUrl, title, image, episodes };
+  return { id: feedUrl, feedUrl, title, description, image, episodes };
 }
 
 function parseAtomFeed(xml: string, feedUrl: string) {
   const title = text(xml, ["title"]);
+  const description = text(xml, ["subtitle", "summary"]);
   const image = text(xml, ["logo", "icon"]);
   const entries = [...xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)].map((match) => match[0]);
   const episodes = entries.slice(0, 150).map((entry) => {
@@ -397,7 +399,7 @@ function parseAtomFeed(xml: string, feedUrl: string) {
       image,
     };
   }).filter((episode) => episode.audioUrl);
-  return { id: feedUrl, feedUrl, title, image, episodes };
+  return { id: feedUrl, feedUrl, title, description, image, episodes };
 }
 
 function atomEnclosure(entry: string) {

@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.10';
+  const APP_VERSION = '0.1.14';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -240,7 +240,11 @@
 
   function renderEpisodesView() {
     let eps = Object.values(state.episodes);
-    if (state.view === 'stream') eps.sort((a,b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+    if (state.view === 'stream') {
+      const activeShowIds = new Set(state.subscriptions.map(s => s.id));
+      eps = eps.filter(e => activeShowIds.has(e.showId))
+        .sort((a,b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+    }
     if (state.view === 'starred') {
       const starredShowIds = new Set(Object.keys(state.starredShows).filter(k => state.starredShows[k]));
       eps = eps.filter(e => state.starredEpisodes[e.id] || starredShowIds.has(e.showId))
@@ -317,12 +321,48 @@
     const subscriptions = [...state.subscriptions].sort((a, b) =>
       (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true })
     );
-    els.content.innerHTML = `<div class="subscription-grid">${subscriptions.map(s => `<article class="subscription">
+    els.content.innerHTML = `<div class="subscription-list">${subscriptions.map(s => `<article class="subscription-row">
       ${coverMarkup(s.image, s.title)}
-      <div><div class="subscription-title">${esc(s.title)}</div><div class="subscription-meta">${s.episodeCount || 0} episodes loaded</div></div>
-      <button class="icon-button star-show ${state.starredShows[s.id] ? 'active':''}" data-star-show="${escAttr(s.id)}" aria-label="Star podcast"><i data-lucide="star"></i></button>
+      <div class="subscription-main">
+        <div class="subscription-title">${esc(s.title)}</div>
+        ${s.description ? `<div class="subscription-description">${esc(s.description)}</div>` : `<div class="subscription-description muted">No description supplied by this podcast.</div>`}
+        <div class="subscription-meta">${s.episodeCount || 0} episodes loaded</div>
+      </div>
+      <div class="subscription-actions">
+        <button class="icon-button star-show ${state.starredShows[s.id] ? 'active':''}" data-star-show="${escAttr(s.id)}" aria-label="Star podcast" title="Star podcast"><i data-lucide="star"></i></button>
+        <button class="icon-button remove-show" data-remove-show="${escAttr(s.id)}" aria-label="Remove podcast" title="Remove podcast"><i data-lucide="trash-2"></i></button>
+      </div>
     </article>`).join('')}</div>`;
     els.content.querySelectorAll('[data-star-show]').forEach(el => el.addEventListener('click', () => toggleStarShow(el.dataset.starShow)));
+    els.content.querySelectorAll('[data-remove-show]').forEach(el => el.addEventListener('click', () => removeSubscription(el.dataset.removeShow)));
+  }
+
+  async function removeSubscription(showId) {
+    const sub = state.subscriptions.find(s => s.id === showId);
+    if (!sub) return;
+    const ok = window.confirm(`Remove “${sub.title}” from Podcasts?\n\nListening history and individually starred episodes will be kept.`);
+    if (!ok) return;
+
+    state.subscriptions = state.subscriptions.filter(s => s.id !== showId);
+    if (state.starredShows[showId]) {
+      delete state.starredShows[showId];
+      await syncShowStarToRemote(showId);
+    }
+    saveLocal();
+    render();
+
+    if (state.remoteReady) {
+      const { error } = await state.supabase.from('podstream_subscriptions')
+        .delete()
+        .eq('user_id', state.user.id)
+        .eq('feed_url', sub.feedUrl);
+      if (error) {
+        console.warn('Subscription removal failed', error);
+        toast('Removed locally, but cloud sync failed.');
+        return;
+      }
+    }
+    toast('Podcast removed');
   }
 
   function emptyMarkup(title, body, icon) {
@@ -417,6 +457,7 @@
       feedUrl,
       title: feed.title || 'Untitled podcast',
       image: feed.image || '',
+      description: feed.description || '',
       episodeCount: (feed.episodes || []).length,
       updatedAt: Date.now(),
     };
@@ -783,8 +824,18 @@
       const remoteSettings = settingsRes.data;
 
       for (const sub of subs) {
-        if (!state.subscriptions.find(x => x.feedUrl === sub.feed_url)) {
-          try { const feed = await fetchFeed(sub.feed_url); upsertFeed(feed, sub.feed_url); } catch (e) { console.warn('Feed hydration failed', e); }
+        const local = state.subscriptions.find(x => x.feedUrl === sub.feed_url);
+        if (local) {
+          local.title = sub.title || local.title;
+          local.image = sub.image_url || local.image;
+          local.description = sub.description || local.description || '';
+        }
+        if (!local || !local.description) {
+          try {
+            const feed = await fetchFeed(sub.feed_url);
+            upsertFeed(feed, sub.feed_url);
+            await syncSubscriptionToRemote(sub.feed_url, feed);
+          } catch (e) { console.warn('Feed hydration failed', e); }
         }
       }
 
@@ -825,6 +876,7 @@
       feed_url: feedUrl,
       title: feed.title || null,
       image_url: feed.image || null,
+      description: feed.description || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,feed_url' });
     if (error) console.warn('Subscription sync failed', error);

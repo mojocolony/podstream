@@ -1,4 +1,4 @@
-# Podstream v0.1.13
+# Podstream v0.1.14
 
 A deliberately small podcast web app.
 
@@ -85,7 +85,7 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
 
-## v0.1.13
+## v0.1.14
 
 - Improved website-to-RSS discovery for podcast sites that do not expose a standard feed link in their HTML.
 - Added a validated podcast-directory fallback using the podcast name discovered from the website.
@@ -95,3 +95,9 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Podstream discovers standard RSS/Atom feed declarations and likely feed links from podcast websites.
 - Discovered feeds are validated before subscription.
 - If a website exposes multiple valid podcast feeds, Podstream presents a chooser instead of guessing.
+
+
+## v0.1.14
+- Podcasts view is now an alphabetical list with full wrapping titles and show descriptions.
+- Added remove/unsubscribe control; removing a podcast keeps listening history and individually starred episodes.
+- Podcast descriptions now sync through the dedicated `description` field in `podstream_subscriptions`.

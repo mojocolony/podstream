@@ -8,6 +8,7 @@ create table if not exists public.podstream_subscriptions (
   feed_url text not null,
   title text,
   image_url text,
+  description text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, feed_url)
