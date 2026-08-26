@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.1';
+  const APP_VERSION = '0.1.2';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -140,15 +140,16 @@
   function render() {
     const meta = {
       stream: ['Stream','Newest episodes from your subscriptions.'],
-      progress: ['In Progress','Pick up where you left off.'],
+      podcasts: ['Podcasts','The podcasts you follow.'],
       starred: ['Starred','Episodes and podcasts you want to keep close.'],
-      subscriptions: ['Subscriptions','The podcasts you follow.'],
+      history: ['History','What you have been listening to.'],
     }[state.view];
     els.viewTitle.textContent = meta[0];
     els.viewSubtitle.textContent = meta[1];
-    els.addPodcastButton.style.display = state.view === 'subscriptions' || state.subscriptions.length === 0 ? 'inline-flex' : '';
+    els.addPodcastButton.style.display = state.view === 'podcasts' || state.subscriptions.length === 0 ? 'inline-flex' : 'none';
 
-    if (state.view === 'subscriptions') renderSubscriptions();
+    if (state.view === 'podcasts') renderSubscriptions();
+    else if (state.view === 'history') renderHistory();
     else renderEpisodesView();
     renderPlayer();
     lucide.createIcons();
@@ -157,12 +158,6 @@
   function renderEpisodesView() {
     let eps = Object.values(state.episodes);
     if (state.view === 'stream') eps.sort((a,b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-    if (state.view === 'progress') {
-      eps = eps.filter(e => {
-        const p = state.playback[e.id];
-        return p && p.position > 5 && !p.completed;
-      }).sort((a,b) => (state.playback[b.id]?.updatedAt || 0) - (state.playback[a.id]?.updatedAt || 0));
-    }
     if (state.view === 'starred') {
       const starredShowIds = new Set(Object.keys(state.starredShows).filter(k => state.starredShows[k]));
       eps = eps.filter(e => state.starredEpisodes[e.id] || starredShowIds.has(e.showId))
@@ -172,8 +167,6 @@
     if (!eps.length) {
       const copy = state.view === 'stream' && !state.subscriptions.length
         ? ['No podcasts yet','Add a podcast RSS feed and its latest episodes will appear here.','rss']
-        : state.view === 'progress'
-        ? ['Nothing in progress','Episodes you start will appear here until you finish them.','circle-play']
         : state.view === 'starred'
         ? ['Nothing starred','Star an episode or podcast and it will appear here.','star']
         : ['Nothing here yet','Refresh your feeds to load episodes.','radio'];
@@ -182,6 +175,36 @@
     }
 
     els.content.innerHTML = `<div class="episode-list">${eps.map(episodeMarkup).join('')}</div>`;
+    els.content.querySelectorAll('[data-play]').forEach(el => el.addEventListener('click', () => playEpisode(el.dataset.play)));
+    els.content.querySelectorAll('[data-star-episode]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); toggleStarEpisode(el.dataset.starEpisode); }));
+  }
+
+  function renderHistory() {
+    const played = Object.values(state.episodes)
+      .filter(e => {
+        const p = state.playback[e.id];
+        return p && (Number(p.position) > 0.5 || p.completed);
+      })
+      .sort((a,b) => (state.playback[b.id]?.updatedAt || 0) - (state.playback[a.id]?.updatedAt || 0));
+
+    const inProgress = played.filter(e => {
+      const p = state.playback[e.id];
+      return p && p.position > 5 && !p.completed;
+    });
+    const recentlyPlayed = played.filter(e => !inProgress.some(ip => ip.id === e.id));
+
+    if (!played.length) {
+      els.content.innerHTML = emptyMarkup('No listening history','Episodes you play will appear here.','history');
+      return;
+    }
+
+    const section = (title, episodes) => episodes.length ? `
+      <section class="history-section">
+        <div class="section-heading"><h2>${title}</h2><span>${episodes.length}</span></div>
+        <div class="episode-list">${episodes.map(episodeMarkup).join('')}</div>
+      </section>` : '';
+
+    els.content.innerHTML = `${section('In Progress', inProgress)}${section('Recently Played', recentlyPlayed)}`;
     els.content.querySelectorAll('[data-play]').forEach(el => el.addEventListener('click', () => playEpisode(el.dataset.play)));
     els.content.querySelectorAll('[data-star-episode]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); toggleStarEpisode(el.dataset.starEpisode); }));
   }

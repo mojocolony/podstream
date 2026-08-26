@@ -1,4 +1,4 @@
-# Podstream v0.1.1
+# Podstream v0.1.2
 
 A deliberately small podcast web app.
 
@@ -44,3 +44,9 @@ The toggle uses browser Web Audio processing:
 - moderate dynamic compression
 
 Processing occurs locally while audio streams. Some podcast hosts do not permit the browser CORS access needed for Web Audio processing; on those streams normal playback continues, but Enhance Voices is unavailable.
+
+
+## v0.1.2
+- Sidebar simplified to Stream, Podcasts, Starred, and History.
+- History groups unfinished episodes under In Progress and other listening under Recently Played.
+- Refresh and Settings moved to the top bar; version number moved to the bottom of the sidebar.
