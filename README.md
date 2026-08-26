@@ -1,4 +1,4 @@
-# Podstream v0.1.18
+# Podstream v0.1.19
 
 A deliberately small podcast web app.
 
@@ -84,6 +84,12 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Added desktop playback keyboard shortcuts: Space toggles play/pause; Left Arrow jumps back 15 seconds; Right Arrow jumps forward 15 seconds.
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
+
+
+## v0.1.19
+
+- Fixes numeric and double-encoded HTML entities in podcast and episode titles (for example `&#039;`).
+- Adds defensive client-side entity decoding so previously saved History/Starred titles also display correctly.
 
 ## v0.1.18
 

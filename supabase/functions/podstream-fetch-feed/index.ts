@@ -101,7 +101,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.1.15 (+personal podcast reader)",
+          "user-agent": "Podstream/0.1.19 (+personal podcast reader)",
           accept,
         },
       });
@@ -272,7 +272,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.1.15 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.1.19 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
@@ -318,11 +318,30 @@ function htmlAttr(tag: string, name: string) {
 }
 
 function decodeHtml(value = "") {
-  return value.replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
+  const named: Record<string, string> = {
+    amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ",
+    ndash: "–", mdash: "—", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", hellip: "…"
+  };
+  return value
+    .replace(/&#x([0-9a-f]+);?/gi, (whole, hex) => {
+      const cp = Number.parseInt(hex, 16);
+      return Number.isFinite(cp) && cp <= 0x10ffff ? String.fromCodePoint(cp) : whole;
+    })
+    .replace(/&#(\d+);?/g, (whole, dec) => {
+      const cp = Number.parseInt(dec, 10);
+      return Number.isFinite(cp) && cp <= 0x10ffff ? String.fromCodePoint(cp) : whole;
+    })
+    .replace(/&([a-z]+);/gi, (whole, name) => named[name.toLowerCase()] ?? whole);
 }
 
 function decodeEntities(value = "") {
-  return decodeHtml(value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")).trim();
+  let out = value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+  for (let i = 0; i < 2; i++) {
+    const decoded = decodeHtml(out);
+    if (decoded === out) break;
+    out = decoded;
+  }
+  return out.trim();
 }
 
 function stripTags(value = "") {

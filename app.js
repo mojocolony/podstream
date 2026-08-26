@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.18';
+  const APP_VERSION = '0.1.19';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -235,8 +235,8 @@
       if (selected) meta = [selected.title || 'Podcast', 'Episodes'];
       else state.selectedPodcastId = null;
     }
-    els.viewTitle.textContent = meta[0];
-    els.viewSubtitle.textContent = meta[1];
+    els.viewTitle.textContent = decodeHtmlText(meta[0]);
+    els.viewSubtitle.textContent = decodeHtmlText(meta[1]);
     els.addPodcastButton.style.display = 'inline-flex';
 
     if (state.view === 'podcasts' && state.selectedPodcastId) renderPodcastEpisodes(state.selectedPodcastId);
@@ -323,7 +323,7 @@
   }
 
   function sortablePodcastTitle(title) {
-    return String(title).trim().replace(/^(?:the|an|a)\s+/i, '').trim();
+    return decodeHtmlText(title).trim().replace(/^(?:the|an|a)\s+/i, '').trim();
   }
 
   function renderSubscriptions() {
@@ -400,7 +400,7 @@
   async function removeSubscription(showId) {
     const sub = state.subscriptions.find(s => s.id === showId);
     if (!sub) return;
-    const ok = window.confirm(`Remove “${sub.title}” from Podcasts?\n\nListening history and individually starred episodes will be kept.`);
+    const ok = window.confirm(`Remove “${decodeHtmlText(sub.title)}” from Podcasts?\n\nListening history and individually starred episodes will be kept.`);
     if (!ok) return;
 
     state.subscriptions = state.subscriptions.filter(s => s.id !== showId);
@@ -597,8 +597,8 @@
     const ep = state.episodes[state.currentEpisodeId];
     if (!ep) { els.player.classList.add('hidden'); return; }
     els.player.classList.remove('hidden');
-    els.playerTitle.textContent = ep.title;
-    els.playerShow.textContent = ep.showTitle;
+    els.playerTitle.textContent = decodeHtmlText(ep.title);
+    els.playerShow.textContent = decodeHtmlText(ep.showTitle);
     els.playerArtButton.innerHTML = ep.image ? `<img src="${escAttr(ep.image)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
     els.enhanceButton.setAttribute('aria-pressed', String(state.enhanceVoices));
     els.starEpisodeButton.classList.toggle('active', !!state.starredEpisodes[ep.id]);
@@ -985,7 +985,18 @@
   function formatTime(s) { if (!Number.isFinite(s) || s < 0) return '0:00'; s=Math.floor(s); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60; return h ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`; }
   function friendlyDate(v) { try { const d=new Date(v); const diff=(Date.now()-d)/86400000; if (diff < 1) return 'Today'; if (diff < 2) return 'Yesterday'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); } catch { return ''; } }
   function hash(str) { let h=2166136261; for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)} return (h>>>0).toString(36); }
-  function esc(s='') { return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+  const entityDecoder = document.createElement('textarea');
+  function decodeHtmlText(s='') {
+    let out = String(s);
+    for (let i = 0; i < 2; i++) {
+      entityDecoder.innerHTML = out;
+      const decoded = entityDecoder.value;
+      if (decoded === out) break;
+      out = decoded;
+    }
+    return out;
+  }
+  function esc(s='') { return decodeHtmlText(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
   function escAttr(s='') { return esc(s); }
   function toast(msg) { clearTimeout(toastTimer); els.toast.textContent=msg; els.toast.classList.remove('hidden'); toastTimer=setTimeout(()=>els.toast.classList.add('hidden'),2600); }
 })();
