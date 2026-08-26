@@ -1,4 +1,4 @@
-# Podstream v0.1.3
+# Podstream v0.1.4
 
 A deliberately small podcast web app.
 
@@ -51,7 +51,7 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - History groups unfinished episodes under In Progress and other listening under Recently Played.
 - Refresh and Settings moved to the top bar; version number moved to the bottom of the sidebar.
 
-## v0.1.3
+## v0.1.4
 - New Reader-inspired blue-grey palette anchored by `#e6ecf2`.
 - Softer blue navigation selection, primary controls, player controls, panels and focus states.
 - Keeps Podstream's layout and functionality unchanged.

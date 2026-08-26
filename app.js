@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.3';
+  const APP_VERSION = '0.1.4';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -57,6 +57,15 @@
       els.addPodcastDialog.showModal();
     });
     els.addPodcastForm.addEventListener('submit', handleAddPodcast);
+    document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => btn.closest('dialog')?.close()));
+    [els.addPodcastDialog, els.settingsDialog].forEach(dialog => {
+      dialog.addEventListener('click', (ev) => {
+        if (ev.target === dialog) dialog.close();
+      });
+      dialog.addEventListener('cancel', () => {
+        if (dialog === els.addPodcastDialog) els.feedError.classList.add('hidden');
+      });
+    });
     els.settingsButton.addEventListener('click', openSettings);
     els.saveSettingsButton.addEventListener('click', saveSettingsAndSignIn);
     els.signOutButton.addEventListener('click', signOut);
