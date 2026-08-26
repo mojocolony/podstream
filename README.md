@@ -1,4 +1,4 @@
-# Podstream v0.1.9
+# Podstream v0.1.10
 
 A deliberately small podcast web app.
 
@@ -77,3 +77,9 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 ## v0.1.9
 
 - Podcasts view is now sorted alphabetically by podcast title (A–Z), case-insensitively.
+
+
+## v0.1.10
+
+- Added desktop playback keyboard shortcuts: Space toggles play/pause; Left Arrow jumps back 15 seconds; Right Arrow jumps forward 15 seconds.
+- Shortcuts do not intercept typing, focused controls, or open dialogs.

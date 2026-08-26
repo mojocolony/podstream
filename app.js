@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.9';
+  const APP_VERSION = '0.1.10';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -75,8 +75,9 @@
     els.syncButton.addEventListener('click', refreshAllFeeds);
     els.menuButton.addEventListener('click', () => els.sidebar.classList.toggle('open'));
     els.playPause.addEventListener('click', togglePlay);
-    els.back15.addEventListener('click', () => { els.audio.currentTime = Math.max(0, els.audio.currentTime - 15); });
-    els.forward15.addEventListener('click', () => { els.audio.currentTime = Math.min(els.audio.duration || Infinity, els.audio.currentTime + 15); });
+    els.back15.addEventListener('click', () => jumpPlayback(-15));
+    els.forward15.addEventListener('click', () => jumpPlayback(15));
+    document.addEventListener('keydown', handlePlaybackShortcuts);
     els.seek.addEventListener('input', () => { if (Number.isFinite(els.audio.duration)) els.audio.currentTime = Number(els.seek.value) / 100 * els.audio.duration; });
     bindAudioEvents();
     els.enhanceButton.addEventListener('click', toggleEnhance);
@@ -450,6 +451,34 @@
     if (!state.currentEpisodeId) return;
     if (els.audio.paused) els.audio.play().catch(err => toast(`Playback failed: ${err.message}`));
     else els.audio.pause();
+  }
+
+  function jumpPlayback(seconds) {
+    if (!state.currentEpisodeId || !Number.isFinite(els.audio.currentTime)) return;
+    const duration = Number.isFinite(els.audio.duration) ? els.audio.duration : Infinity;
+    els.audio.currentTime = Math.max(0, Math.min(duration, els.audio.currentTime + seconds));
+    updateScrub();
+    persistPlayback(true);
+  }
+
+  function handlePlaybackShortcuts(event) {
+    if (!state.currentEpisodeId || els.player.classList.contains('hidden')) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    const target = event.target;
+    if (target instanceof Element && target.closest('input, textarea, select, button, a, [contenteditable="true"], [role="textbox"]')) return;
+    if (document.querySelector('dialog[open]')) return;
+
+    if (event.code === 'Space') {
+      event.preventDefault();
+      togglePlay();
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      jumpPlayback(-15);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      jumpPlayback(15);
+    }
   }
 
   function onLoadedMetadata() {
