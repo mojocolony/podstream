@@ -1,4 +1,4 @@
-# Podstream v0.1.4
+# Podstream v0.1.6
 
 A deliberately small podcast web app.
 
@@ -51,7 +51,19 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - History groups unfinished episodes under In Progress and other listening under Recently Played.
 - Refresh and Settings moved to the top bar; version number moved to the bottom of the sidebar.
 
-## v0.1.4
+## v0.1.6
 - New Reader-inspired blue-grey palette anchored by `#e6ecf2`.
 - Softer blue navigation selection, primary controls, player controls, panels and focus states.
 - Keeps Podstream's layout and functionality unchanged.
+
+
+## v0.1.6
+- Uses the shared app accent blue `#7C8DA7` for primary controls.
+- Adds Small / Default / Large text-size controls in Settings, remembered on each device.
+- Keeps Add Podcast visible in the top bar after subscriptions have been added.
+
+
+## v0.1.6
+- Fixed Enhance Voices muting playback by rebuilding the active audio element with CORS enabled before attaching the Web Audio graph.
+- Added fail-safe restoration to ordinary playback if a podcast host cannot be processed.
+- Resumes the AudioContext directly from the user action for better Safari/iOS compatibility.

@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.4';
+  const APP_VERSION = '0.1.6';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -14,6 +14,7 @@
     starredShows: {},
     currentEpisodeId: null,
     enhanceVoices: false,
+    textSize: 'medium',
     user: null,
     supabase: null,
     remoteReady: false,
@@ -33,6 +34,7 @@
   async function init() {
     cacheEls();
     loadLocal();
+    applyTextSize();
     bindEvents();
     render();
     lucide.createIcons();
@@ -67,6 +69,7 @@
       });
     });
     els.settingsButton.addEventListener('click', openSettings);
+    document.querySelectorAll('[data-text-size]').forEach(btn => btn.addEventListener('click', () => setTextSize(btn.dataset.textSize)));
     els.saveSettingsButton.addEventListener('click', saveSettingsAndSignIn);
     els.signOutButton.addEventListener('click', signOut);
     els.syncButton.addEventListener('click', refreshAllFeeds);
@@ -91,10 +94,20 @@
     els.audio.addEventListener('ended', onEnded);
   }
 
+  function disconnectAudioGraph({ closeContext = true } = {}) {
+    try { sourceNode?.disconnect(); } catch (_) {}
+    try { highPass?.disconnect(); } catch (_) {}
+    try { presence?.disconnect(); } catch (_) {}
+    try { compressor?.disconnect(); } catch (_) {}
+    sourceNode = highPass = presence = compressor = null;
+    if (closeContext && audioCtx) {
+      try { audioCtx.close(); } catch (_) {}
+      audioCtx = null;
+    }
+  }
+
   function resetAudioPipeline() {
-    if (!audioCtx) return;
-    try { sourceNode?.disconnect(); highPass?.disconnect(); presence?.disconnect(); compressor?.disconnect(); audioCtx.close(); } catch (_) {}
-    audioCtx = sourceNode = highPass = presence = compressor = null;
+    disconnectAudioGraph({ closeContext: true });
     const old = els.audio;
     const fresh = document.createElement('audio');
     fresh.id = 'audio';
@@ -102,6 +115,58 @@
     old.replaceWith(fresh);
     els.audio = fresh;
     bindAudioEvents();
+  }
+
+  function snapshotAudio() {
+    return {
+      src: els.audio.currentSrc || els.audio.src || '',
+      time: Number.isFinite(els.audio.currentTime) ? els.audio.currentTime : 0,
+      wasPlaying: !els.audio.paused,
+      volume: els.audio.volume,
+      muted: els.audio.muted,
+      playbackRate: els.audio.playbackRate,
+    };
+  }
+
+  async function rebuildAudioElement({ cors = false, snapshot = snapshotAudio(), autoplay = false } = {}) {
+    const old = els.audio;
+    try { old.pause(); } catch (_) {}
+    disconnectAudioGraph({ closeContext: false });
+
+    const fresh = document.createElement('audio');
+    fresh.id = 'audio';
+    fresh.preload = 'metadata';
+    if (cors) fresh.crossOrigin = 'anonymous';
+    fresh.volume = snapshot.volume ?? 1;
+    fresh.muted = !!snapshot.muted;
+    fresh.playbackRate = snapshot.playbackRate || 1;
+    old.replaceWith(fresh);
+    els.audio = fresh;
+    bindAudioEvents();
+
+    if (!snapshot.src) return snapshot;
+
+    const ready = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Audio stream did not become ready.')), 10000);
+      const cleanup = () => {
+        clearTimeout(timer);
+        fresh.removeEventListener('loadedmetadata', onReady);
+        fresh.removeEventListener('error', onError);
+      };
+      const onReady = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error('This stream cannot be processed by the browser.')); };
+      fresh.addEventListener('loadedmetadata', onReady, { once: true });
+      fresh.addEventListener('error', onError, { once: true });
+    });
+
+    fresh.src = snapshot.src;
+    fresh.load();
+    await ready;
+    if (snapshot.time > 0 && Number.isFinite(fresh.duration)) {
+      fresh.currentTime = Math.min(snapshot.time, Math.max(0, fresh.duration - 0.25));
+    }
+    if (autoplay && snapshot.wasPlaying) await fresh.play();
+    return snapshot;
   }
 
   async function streamSupportsEnhancement(url) {
@@ -116,6 +181,8 @@
 
   function loadLocal() {
     try {
+      const settings = getSettings();
+      state.textSize = ['small','medium','large'].includes(settings.textSize) ? settings.textSize : 'medium';
       const raw = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
       Object.assign(state, {
         subscriptions: raw.subscriptions || [],
@@ -155,7 +222,7 @@
     }[state.view];
     els.viewTitle.textContent = meta[0];
     els.viewSubtitle.textContent = meta[1];
-    els.addPodcastButton.style.display = state.view === 'podcasts' || state.subscriptions.length === 0 ? 'inline-flex' : 'none';
+    els.addPodcastButton.style.display = 'inline-flex';
 
     if (state.view === 'podcasts') renderSubscriptions();
     else if (state.view === 'history') renderHistory();
@@ -325,26 +392,41 @@
   async function playEpisode(id) {
     const ep = state.episodes[id];
     if (!ep?.audioUrl) return;
+
     if (state.currentEpisodeId !== id) {
       persistPlayback(false);
-      // A Web Audio graph cannot safely be reused with a later stream that lacks CORS.
-      // Recreate the media element between episodes so ordinary playback always has a clean fallback.
+      const shouldEnhance = state.enhanceVoices;
       resetAudioPipeline();
       state.currentEpisodeId = id;
+      if (shouldEnhance) els.audio.crossOrigin = 'anonymous';
       els.audio.src = ep.audioUrl;
       els.audio.load();
       renderPlayer();
     }
+
     if (state.enhanceVoices) {
-      const ok = await streamSupportsEnhancement(ep.audioUrl);
-      if (ok) await ensureAudioGraph();
-      else {
+      try {
+        await ensureAudioGraph();
+        await els.audio.play();
+      } catch (err) {
+        console.warn('Enhanced playback failed; restoring normal playback.', err);
+        const snapshot = snapshotAudio();
         state.enhanceVoices = false;
+        disconnectAudioGraph({ closeContext: true });
+        try {
+          await rebuildAudioElement({ cors: false, snapshot, autoplay: false });
+          await els.audio.play();
+        } catch (_) {
+          // If the browser no longer considers this a user-initiated play, the user can tap Play once.
+        }
         saveLocal();
         renderPlayer();
-        toast('Enhance Voices is unavailable for this stream; normal playback will continue.');
+        syncSettingsToRemote();
+        toast('Enhance Voices is unavailable for this stream; normal playback has been restored.');
       }
+      return;
     }
+
     els.audio.play().catch(err => toast(`Playback failed: ${err.message}`));
   }
 
@@ -416,27 +498,63 @@
   async function toggleEnhance() {
     const ep = state.episodes[state.currentEpisodeId];
     if (!ep) return;
+
     if (!state.enhanceVoices) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return toast('Enhance Voices is not supported by this browser.');
+
+      // Start/resume the AudioContext immediately from the user's click. On iOS/Safari,
+      // waiting for a network check first can lose the user gesture and leave the graph suspended.
+      try {
+        if (!audioCtx) audioCtx = new Ctx();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+      } catch (_) {
+        return toast('Enhance Voices could not start. Normal playback is unaffected.');
+      }
+
       const ok = await streamSupportsEnhancement(ep.audioUrl);
       if (!ok) return toast('This podcast host does not allow browser voice enhancement. Normal playback is unaffected.');
-      state.enhanceVoices = true;
-      saveLocal();
-      await ensureAudioGraph();
-      applyEnhanceState();
+
+      const snapshot = snapshotAudio();
+      try {
+        // MediaElementAudioSource requires the media element itself to have loaded the
+        // stream with CORS enabled. Rebuild it in CORS mode, then attach the filters.
+        await rebuildAudioElement({ cors: true, snapshot, autoplay: false });
+        state.enhanceVoices = true;
+        await ensureAudioGraph();
+        applyEnhanceState();
+        if (snapshot.wasPlaying) await els.audio.play();
+      } catch (err) {
+        console.warn('Voice enhancement unavailable; restoring normal playback.', err);
+        state.enhanceVoices = false;
+        disconnectAudioGraph({ closeContext: true });
+        try {
+          await rebuildAudioElement({ cors: false, snapshot, autoplay: snapshot.wasPlaying });
+        } catch (_) {
+          // If restoration itself fails, leave the player visible and let the user retry Play.
+        }
+        saveLocal();
+        renderPlayer();
+        return toast('Enhance Voices is unavailable for this stream; normal playback has been restored.');
+      }
     } else {
       state.enhanceVoices = false;
       saveLocal();
       applyEnhanceState();
     }
+
+    saveLocal();
     await syncSettingsToRemote();
     renderPlayer();
   }
 
   async function ensureAudioGraph() {
-    if (audioCtx) { if (audioCtx.state === 'suspended') await audioCtx.resume(); return; }
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    audioCtx = new Ctx();
+    if (!Ctx) throw new Error('Web Audio is unavailable.');
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (sourceNode) return;
+
     sourceNode = audioCtx.createMediaElementSource(els.audio);
     highPass = audioCtx.createBiquadFilter();
     highPass.type = 'highpass'; highPass.frequency.value = 85; highPass.Q.value = 0.7;
@@ -449,11 +567,22 @@
   }
 
   function applyEnhanceState() {
-    if (!highPass || !presence || !compressor) return;
-    if (state.enhanceVoices) {
-      highPass.frequency.value = 85; presence.gain.value = 3.5; compressor.threshold.value = -26; compressor.ratio.value = 3;
+    if (!sourceNode || !audioCtx) return;
+    try { sourceNode.disconnect(); } catch (_) {}
+    try { highPass?.disconnect(); } catch (_) {}
+    try { presence?.disconnect(); } catch (_) {}
+    try { compressor?.disconnect(); } catch (_) {}
+
+    if (state.enhanceVoices && highPass && presence && compressor) {
+      highPass.frequency.value = 85;
+      presence.gain.value = 3.5;
+      compressor.threshold.value = -26;
+      compressor.ratio.value = 3;
+      sourceNode.connect(highPass).connect(presence).connect(compressor).connect(audioCtx.destination);
     } else {
-      highPass.frequency.value = 20; presence.gain.value = 0; compressor.threshold.value = 0; compressor.ratio.value = 1;
+      // True bypass: when Enhance Voices is off, route the media source directly
+      // to the speakers rather than leaving it inside a near-neutral filter chain.
+      sourceNode.connect(audioCtx.destination);
     }
   }
 
@@ -470,10 +599,32 @@
     await syncShowStarToRemote(id);
   }
 
+  function applyTextSize() {
+    document.documentElement.dataset.textSize = state.textSize || 'medium';
+    updateTextSizeButtons();
+  }
+
+  function setTextSize(size) {
+    if (!['small','medium','large'].includes(size)) return;
+    state.textSize = size;
+    const settings = getSettings();
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, textSize: size }));
+    applyTextSize();
+  }
+
+  function updateTextSizeButtons() {
+    document.querySelectorAll('[data-text-size]').forEach(btn => {
+      const active = btn.dataset.textSize === state.textSize;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+  }
+
   function openSettings() {
     const s = getSettings();
     els.emailInput.value = state.user?.email || s.email || '';
     els.authStatus.textContent = state.user ? `Signed in as ${state.user.email}` : 'Not signed in.';
+    updateTextSizeButtons();
     els.settingsDialog.showModal();
   }
 
@@ -483,7 +634,8 @@
 
   async function saveSettingsAndSignIn() {
     const email = els.emailInput.value.trim();
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ email }));
+    const settings = getSettings();
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, email }));
     if (!state.supabase || !email) { els.authStatus.textContent = 'Enter your email to sign in.'; return; }
     if (state.user?.email?.toLowerCase() === email.toLowerCase()) {
       els.authStatus.textContent = `Already signed in as ${state.user.email}`;
