@@ -1,4 +1,4 @@
-# Podstream v0.1.15
+# Podstream v0.1.16
 
 A deliberately small podcast web app.
 
@@ -84,6 +84,11 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Added desktop playback keyboard shortcuts: Space toggles play/pause; Left Arrow jumps back 15 seconds; Right Arrow jumps forward 15 seconds.
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
+
+## v0.1.16
+
+- Add Podcast now automatically focuses the website/RSS field when the dialog opens.
+- Podcasts are sorted alphabetically while ignoring leading articles: A, An, and The.
 
 ## v0.1.15
 

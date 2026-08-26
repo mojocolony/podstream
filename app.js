@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.15';
+  const APP_VERSION = '0.1.16';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -60,6 +60,7 @@
       els.feedChoices.innerHTML = '';
       els.feedUrlInput.value = '';
       els.addPodcastDialog.showModal();
+      requestAnimationFrame(() => els.feedUrlInput.focus());
     });
     els.addPodcastForm.addEventListener('submit', handleAddPodcast);
     document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => btn.closest('dialog')?.close()));
@@ -321,14 +322,22 @@
     </article>`;
   }
 
+  function sortablePodcastTitle(title) {
+    return String(title).trim().replace(/^(?:the|an|a)\s+/i, '').trim();
+  }
+
   function renderSubscriptions() {
     if (!state.subscriptions.length) {
       els.content.innerHTML = emptyMarkup('No subscriptions','Add a podcast using its website or RSS feed URL.','rss');
       return;
     }
-    const subscriptions = [...state.subscriptions].sort((a, b) =>
-      (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true })
-    );
+    const subscriptions = [...state.subscriptions].sort((a, b) => {
+      const aTitle = sortablePodcastTitle(a.title || '');
+      const bTitle = sortablePodcastTitle(b.title || '');
+      const primary = aTitle.localeCompare(bTitle, undefined, { sensitivity: 'base', numeric: true });
+      if (primary) return primary;
+      return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true });
+    });
     els.content.innerHTML = `<div class="subscription-list">${subscriptions.map(s => `<article class="subscription-row" data-open-show="${escAttr(s.id)}" tabindex="0" role="button" aria-label="Open ${escAttr(s.title)} episodes">
       ${coverMarkup(s.image, s.title)}
       <div class="subscription-main">
