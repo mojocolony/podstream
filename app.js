@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.1.8';
+  const APP_VERSION = '0.1.9';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -307,7 +307,10 @@
       els.content.innerHTML = emptyMarkup('No subscriptions','Add a podcast using its RSS feed URL.','rss');
       return;
     }
-    els.content.innerHTML = `<div class="subscription-grid">${state.subscriptions.map(s => `<article class="subscription">
+    const subscriptions = [...state.subscriptions].sort((a, b) =>
+      (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true })
+    );
+    els.content.innerHTML = `<div class="subscription-grid">${subscriptions.map(s => `<article class="subscription">
       ${coverMarkup(s.image, s.title)}
       <div><div class="subscription-title">${esc(s.title)}</div><div class="subscription-meta">${s.episodeCount || 0} episodes loaded</div></div>
       <button class="icon-button star-show ${state.starredShows[s.id] ? 'active':''}" data-star-show="${escAttr(s.id)}" aria-label="Star podcast"><i data-lucide="star"></i></button>

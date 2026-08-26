@@ -1,4 +1,4 @@
-# Podstream v0.1.8
+# Podstream v0.1.9
 
 A deliberately small podcast web app.
 
@@ -72,3 +72,8 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 ## v0.1.8
 
 - Replaced the text-based 15-second rewind/forward controls with the supplied custom arrow artwork.
+
+
+## v0.1.9
+
+- Podcasts view is now sorted alphabetically by podcast title (A–Z), case-insensitively.
