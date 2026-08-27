@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.2.6';
+  const APP_VERSION = '0.2.7';
   const LS_KEY = 'podstream-state-v2';
   const LEGACY_LS_KEY = 'podstream-state-v1';
   const CACHE_DB = 'podstream-cache-v1';
@@ -829,7 +829,12 @@
     try {
       for (const s of state.subscriptions) {
         try {
-          const feed = await fetchFeed(s.feedUrl);
+          let feed = await fetchFeed(s.feedUrl);
+          const currentCount = episodeCountForShow(s.id);
+          const needsCatalogRetry = currentCount <= 75 && Number(s.catalogTotal || 0) > currentCount;
+          if ((!s.backfilledAt && (feed.episodes || []).length <= 75) || needsCatalogRetry) {
+            feed = await applyCatalogBackfill(feed);
+          }
           const canonicalUrl = feed.feedUrl || feed.id || s.feedUrl;
           const oldUrl = s.feedUrl;
           const archived = upsertFeed(feed, canonicalUrl, oldUrl);
@@ -1299,11 +1304,13 @@
         const localShow = local || state.subscriptions.find(x => x.feedUrl === sub.feed_url);
         const cachedCount = localShow ? episodeCountForShow(localShow.id) : 0;
         const hasCachedEpisodes = cachedCount > 0;
-        const shouldBackfillCached = !sub.backfilled_at && cachedCount > 0 && cachedCount <= 75;
+        const catalogTotal = Number(sub.catalog_total) || Number(localShow?.catalogTotal) || 0;
+        const shouldBackfillCached = cachedCount > 0 && cachedCount <= 75 && (!sub.backfilled_at || catalogTotal > cachedCount);
         if (!local || !hasCachedEpisodes || !local?.description || !local?.title || /^Untitled podcast$/i.test(local?.title || '') || shouldBackfillCached) {
           try {
             let feed = await fetchFeed(sub.feed_url);
-            const shouldBackfillFeed = !sub.backfilled_at && (feed.episodes || []).length <= 75;
+            const feedCount = (feed.episodes || []).length;
+            const shouldBackfillFeed = feedCount <= 75 && (!sub.backfilled_at || catalogTotal > feedCount);
             if (shouldBackfillCached || shouldBackfillFeed) feed = await applyCatalogBackfill(feed);
             const canonicalUrl = feed.feedUrl || feed.id || sub.feed_url;
             const archived = upsertFeed(feed, canonicalUrl, sub.feed_url);

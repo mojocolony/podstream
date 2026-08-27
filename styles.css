@@ -541,7 +541,7 @@ html[data-theme="dark"] .skip-icon-img { filter: invert(1) brightness(.95); }
   html[data-theme="system"] .skip-icon-img { filter: invert(1) brightness(.95); }
 }
 
-/* v0.2.6 — Now Playing */
+/* v0.2.7 — Now Playing */
 .player-meta .player-titles { cursor:pointer; border-radius:8px; }
 .player-meta .player-titles:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
 .now-playing-dialog { width:min(92vw,760px); }

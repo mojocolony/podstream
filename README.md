@@ -1,4 +1,4 @@
-# Podstream v0.2.6
+# Podstream v0.2.7
 
 A deliberately small podcast web app.
 
@@ -48,16 +48,14 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 
 
 
-## v0.2.6
+## v0.2.7
 
-- Adds a Now Playing overlay opened from the compact bottom player.
-- Now Playing includes large artwork, episode/show titles, full scrub controls, ±15 seconds, play/pause, Star, Enhance Voices, and a View podcast episodes action.
-- Restores Space as a reliable global play/pause shortcut even when a toolbar/player button still has focus.
-- Keeps Left/Right Arrow ±15-second shortcuts when focus is not inside an interactive control.
-- Adds a synced `podstream_episode_archive` table so Podstream retains every episode it has learned about even when a publisher later shortens its live RSS feed.
-- On new subscriptions, and on existing feeds with suspiciously small catalogues, performs a one-time Apple directory backfill of up to 200 playable episodes and then keeps them permanently in the Podstream archive.
-- Stores Apple's total catalogue count when available so the podcast info popup can distinguish playable archived episodes from Apple's larger directory count.
-- Existing IndexedDB episode data is uploaded into the server-side archive after sign-in, so older locally known episodes become available on other devices.
+- Fixes the historical Apple catalogue backfill introduced in v0.2.6.
+- Apple episode lookup now explicitly uses the US storefront, `media=podcast`, `entity=podcastEpisode`, and a 200-episode limit.
+- Adds a second Apple podcast-episode search fallback, filtered to the exact Apple collection ID.
+- Short catalogues are retryable: if Apple reports a larger catalogue but Podstream still has 75 or fewer episodes, Refresh attempts the backfill again.
+- Failed v0.2.6 backfill flags for affected short catalogues are reset server-side so they can repair themselves.
+- Retains the v0.2.6 Now Playing overlay, Space-bar play/pause, and synced episode archive.
 
 ## v0.2.4
 

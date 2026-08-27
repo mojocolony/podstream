@@ -115,7 +115,7 @@ async function fetchJson(input: string, timeoutMs = 10000) {
     const response = await fetch(input, {
       signal: controller.signal,
       headers: {
-        "user-agent": "Podstream/0.2.6 (+personal podcast reader)",
+        "user-agent": "Podstream/0.2.7 (+personal podcast reader)",
         "accept": "application/json",
       },
     });
@@ -270,7 +270,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.2.6 (+personal podcast reader)",
+          "user-agent": "Podstream/0.2.7 (+personal podcast reader)",
           accept,
         },
       });
@@ -442,7 +442,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.2.6 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.2.7 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
