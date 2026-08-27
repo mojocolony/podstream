@@ -545,7 +545,7 @@
     return data;
   }
 
-  function upsertFeed(feed, feedUrl) {
+  function upsertFeed(feed, feedUrl, previousFeedUrl = null) {
     const showId = feed.id || hash(feedUrl);
     const sub = {
       id: showId,
@@ -556,9 +556,24 @@
       episodeCount: (feed.episodes || []).length,
       updatedAt: Date.now(),
     };
-    const idx = state.subscriptions.findIndex(s => s.id === showId || s.feedUrl === feedUrl);
-    if (idx >= 0) state.subscriptions[idx] = { ...state.subscriptions[idx], ...sub };
-    else state.subscriptions.push(sub);
+    const idx = state.subscriptions.findIndex(s => s.id === showId || s.feedUrl === feedUrl || (previousFeedUrl && s.feedUrl === previousFeedUrl));
+    const previous = idx >= 0 ? state.subscriptions[idx] : null;
+    if (idx >= 0) {
+      // If discovery resolves a directory/web URL to the publisher's canonical
+      // RSS URL, replace the old subscription in place instead of leaving a
+      // duplicate/bogus show behind.
+      if (previous?.id && previous.id !== showId) {
+        if (state.starredShows[previous.id]) {
+          state.starredShows[showId] = true;
+          delete state.starredShows[previous.id];
+        }
+        for (const [episodeId, episode] of Object.entries(state.episodes)) {
+          if (episode.showId === previous.id) delete state.episodes[episodeId];
+        }
+        if (state.selectedPodcastId === previous.id) state.selectedPodcastId = showId;
+      }
+      state.subscriptions[idx] = { ...state.subscriptions[idx], ...sub };
+    } else state.subscriptions.push(sub);
 
     for (const ep of (feed.episodes || [])) {
       const id = ep.id || hash(`${showId}|${ep.audioUrl}|${ep.title}`);
@@ -588,8 +603,11 @@
       for (const s of state.subscriptions) {
         try {
           const feed = await fetchFeed(s.feedUrl);
-          upsertFeed(feed, s.feedUrl);
-          await syncSubscriptionToRemote(s.feedUrl, feed);
+          const canonicalUrl = feed.feedUrl || feed.id || s.feedUrl;
+          const oldUrl = s.feedUrl;
+          upsertFeed(feed, canonicalUrl, oldUrl);
+          await syncSubscriptionToRemote(canonicalUrl, feed);
+          if (canonicalUrl !== oldUrl) await removeRemoteSubscriptionByUrl(oldUrl);
           updated += 1;
         } catch (e) {
           failed += 1;
@@ -999,8 +1017,10 @@
         if (!local || !local.description || !local.title || /^Untitled podcast$/i.test(local.title)) {
           try {
             const feed = await fetchFeed(sub.feed_url);
-            upsertFeed(feed, sub.feed_url);
-            await syncSubscriptionToRemote(sub.feed_url, feed);
+            const canonicalUrl = feed.feedUrl || feed.id || sub.feed_url;
+            upsertFeed(feed, canonicalUrl, sub.feed_url);
+            await syncSubscriptionToRemote(canonicalUrl, feed);
+            if (canonicalUrl !== sub.feed_url) await removeRemoteSubscriptionByUrl(sub.feed_url);
           } catch (e) { console.warn('Feed hydration failed', e); }
         }
       }
@@ -1033,6 +1053,15 @@
       console.warn('Remote hydration failed', e);
       toast('Cloud sync could not be refreshed.');
     }
+  }
+
+  async function removeRemoteSubscriptionByUrl(feedUrl) {
+    if (!state.remoteReady || !feedUrl) return;
+    const { error } = await state.supabase.from('podstream_subscriptions')
+      .delete()
+      .eq('user_id', state.user.id)
+      .eq('feed_url', feedUrl);
+    if (error) console.warn('Old subscription cleanup failed', error);
   }
 
   async function syncSubscriptionToRemote(feedUrl, feed) {

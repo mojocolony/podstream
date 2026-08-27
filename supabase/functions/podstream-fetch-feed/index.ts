@@ -20,10 +20,20 @@ Deno.serve(async (req: Request) => {
     const startUrl = normalizeUrl(input);
     if (!startUrl) return json({ error: "Invalid URL" });
 
-    const first = await safeFetchText(startUrl, "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html, */*;q=0.5");
+    // Apple Podcasts pages are directory pages, not podcast feeds. Resolve the
+    // numeric Apple podcast ID through Apple's lookup API first so we fetch
+    // and store the publisher's canonical RSS URL rather than accidentally
+    // discovering an unrelated link from the Apple HTML.
+    const appleId = applePodcastId(startUrl);
+    const appleFeedUrl = await resolveApplePodcastUrl(startUrl);
+    if (appleId && !appleFeedUrl) {
+      return json({ error: "Could not resolve that Apple Podcasts link to its RSS feed." });
+    }
+    const fetchUrl = appleFeedUrl || startUrl;
+    const first = await safeFetchText(fetchUrl, "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html, */*;q=0.5");
 
     if (looksLikeFeed(first.text, first.contentType)) {
-      const feed = parseFeed(first.text, first.url);
+      const feed = await enrichFeedMetadata(parseFeed(first.text, first.url));
       if (feed.episodes.length) return json(feed);
     }
 
@@ -38,7 +48,7 @@ Deno.serve(async (req: Request) => {
       try {
         const fetched = await safeFetchText(candidate, "application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.5");
         if (!looksLikeFeed(fetched.text, fetched.contentType)) continue;
-        const feed = parseFeed(fetched.text, fetched.url);
+        const feed = await enrichFeedMetadata(parseFeed(fetched.text, fetched.url));
         if (!feed.episodes.length) continue;
         if (!feeds.some((existing) => existing.feedUrl === feed.feedUrl)) feeds.push(feed);
       } catch {
@@ -86,6 +96,123 @@ function normalizeUrl(value: string) {
   }
 }
 
+function applePodcastId(input: string) {
+  try {
+    const url = new URL(input);
+    if (url.hostname.toLowerCase() !== "podcasts.apple.com") return "";
+    return url.pathname.match(/\/id(\d+)(?:\/|$)/i)?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+async function fetchJson(input: string, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(input, {
+      signal: controller.signal,
+      headers: {
+        "user-agent": "Podstream/0.2.2 (+personal podcast reader)",
+        "accept": "application/json",
+      },
+    });
+    if (!response.ok) return null;
+    return await response.json().catch(() => null);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveApplePodcastUrl(input: string) {
+  const id = applePodcastId(input);
+  if (!id) return "";
+  const endpoint = new URL("https://itunes.apple.com/lookup");
+  endpoint.searchParams.set("id", id);
+  const payload = await fetchJson(endpoint.toString());
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  const podcast = results.find((result: any) => typeof result?.feedUrl === "string" && result.feedUrl);
+  const feedUrl = podcast?.feedUrl || "";
+  return normalizeUrl(feedUrl) || "";
+}
+
+function normalizedFeedKey(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return value.toLowerCase().replace(/\/+$/, "");
+  }
+}
+
+function queryFromFeedUrl(feedUrl: string) {
+  try {
+    const url = new URL(feedUrl);
+    const parts = url.pathname.split("/").filter(Boolean).reverse();
+    for (const part of parts) {
+      if (/^(feed|feeds|rss|podcast|podcasts|v\d+|audio|xml)$/i.test(part)) continue;
+      const q = decodeURIComponent(part).replace(/\.(rss|xml)$/i, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+      if (q.length >= 3) return q;
+    }
+  } catch {}
+  return "";
+}
+
+async function appleDirectoryMatchForFeed(feedUrl: string) {
+  const query = queryFromFeedUrl(feedUrl);
+  if (!query) return null;
+  const endpoint = new URL("https://itunes.apple.com/search");
+  endpoint.searchParams.set("term", query);
+  endpoint.searchParams.set("media", "podcast");
+  endpoint.searchParams.set("entity", "podcast");
+  endpoint.searchParams.set("limit", "25");
+  const payload = await fetchJson(endpoint.toString());
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  const key = normalizedFeedKey(feedUrl);
+  return results.find((result: any) => typeof result?.feedUrl === "string" && normalizedFeedKey(result.feedUrl) === key) || null;
+}
+
+async function enrichFeedMetadata(feed: any) {
+  const missingTitles = (feed.episodes || []).filter((episode: any) => !String(episode?.title || "").trim());
+  if (feed.title && !missingTitles.length) return feed;
+
+  const directory = await appleDirectoryMatchForFeed(feed.feedUrl || feed.id || "");
+  if (!directory) return feed;
+
+  if (!feed.title) feed.title = String(directory.collectionName || directory.trackName || "").trim();
+  if (!feed.image) feed.image = directory.artworkUrl600 || directory.artworkUrl100 || "";
+  const collectionId = directory.collectionId || directory.trackId;
+  if (!missingTitles.length || !collectionId) return feed;
+
+  const endpoint = new URL("https://itunes.apple.com/lookup");
+  endpoint.searchParams.set("id", String(collectionId));
+  endpoint.searchParams.set("entity", "podcastEpisode");
+  endpoint.searchParams.set("limit", "200");
+  const payload = await fetchJson(endpoint.toString());
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  const episodeResults = results.filter((result: any) => result?.kind === "podcast-episode" || result?.wrapperType === "podcastEpisode");
+  const byGuid = new Map<string, any>();
+  const byAudio = new Map<string, any>();
+  for (const result of episodeResults) {
+    if (result?.episodeGuid) byGuid.set(String(result.episodeGuid), result);
+    for (const audio of [result?.episodeUrl, result?.previewUrl]) {
+      if (typeof audio === "string" && audio) byAudio.set(normalizedFeedKey(audio), result);
+    }
+  }
+
+  for (const episode of feed.episodes || []) {
+    if (String(episode?.title || "").trim()) continue;
+    const guid = String(episode?.guid || episode?.id || "");
+    const match = byGuid.get(guid) || (episode?.audioUrl ? byAudio.get(normalizedFeedKey(episode.audioUrl)) : null);
+    if (!match) continue;
+    episode.title = String(match.trackName || "").trim();
+    if (!episode.duration && match.trackTimeMillis) episode.duration = Number(match.trackTimeMillis) / 1000;
+    if ((!episode.publishedAt || episode.publishedAt === "") && match.releaseDate) episode.publishedAt = match.releaseDate;
+    if (!episode.image) episode.image = match.artworkUrl600 || match.artworkUrl100 || feed.image || "";
+  }
+  return feed;
+}
+
 async function safeFetchText(input: string, accept: string) {
   let current = new URL(input);
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
@@ -101,7 +228,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.2.1 (+personal podcast reader)",
+          "user-agent": "Podstream/0.2.2 (+personal podcast reader)",
           accept,
         },
       });
@@ -142,6 +269,7 @@ function isBlockedHost(hostname: string) {
 
 function looksLikeFeed(text: string, contentType: string) {
   const head = text.slice(0, 4000).toLowerCase();
+  if (contentType.includes("text/html") || /<!doctype\s+html|<html\b/i.test(head)) return false;
   return contentType.includes("rss") || contentType.includes("atom") || contentType.includes("application/xml") || contentType.includes("text/xml") ||
     /<(rss|feed|rdf:rdf)\b/i.test(head);
 }
@@ -272,7 +400,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.2.1 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.2.2 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
@@ -298,7 +426,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
       try {
         const fetched = await safeFetchText(item.feedUrl, "application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.5");
         if (!looksLikeFeed(fetched.text, fetched.contentType)) continue;
-        const feed = parseFeed(fetched.text, fetched.url);
+        const feed = await enrichFeedMetadata(parseFeed(fetched.text, fetched.url));
         if (!feed.episodes.length) continue;
         // Validate the actual feed title as well as the directory listing so a
         // broad website title cannot silently subscribe to an unrelated show.
@@ -345,7 +473,10 @@ function decodeEntities(value = "") {
 }
 
 function stripTags(value = "") {
-  return decodeEntities(value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "));
+  // Unwrap CDATA/entities before removing embedded HTML. Doing this in the
+  // opposite order can erase an entire CDATA-wrapped title.
+  const decoded = decodeEntities(value);
+  return decodeEntities(decoded.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "));
 }
 
 function text(block: string, tags: string[]) {
@@ -356,6 +487,17 @@ function text(block: string, tags: string[]) {
     const cleaned = stripTags(match[1]);
     // Some podcast hosts emit an empty RSS <title> but populate a namespaced
     // title such as <itunes:title>. Keep looking instead of accepting blank.
+    if (cleaned) return cleaned;
+  }
+  return "";
+}
+
+function localText(block: string, localName: string) {
+  const safe = localName.replace(/[^a-z0-9_-]/gi, "");
+  if (!safe) return "";
+  const pattern = new RegExp(`<(?:[\\w.-]+:)?${safe}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${safe}>`, "gi");
+  for (const match of block.matchAll(pattern)) {
+    const cleaned = stripTags(match[1]);
     if (cleaned) return cleaned;
   }
   return "";
@@ -384,16 +526,21 @@ function parseFeed(xml: string, feedUrl: string) {
 
 function parseRssFeed(xml: string, feedUrl: string) {
   const channel = xml.match(/<channel\b[\s\S]*?<\/channel>/i)?.[0] || xml;
-  const title = text(channel, ["title", "itunes:title", "media:title"]);
-  const description = text(channel, ["itunes:summary", "description", "subtitle"]);
-  const image = attr(channel, "itunes:image", "href") || text(channel, ["url"]) || attr(channel, "media:thumbnail", "url");
+  // Show metadata lives before the first <item>. Restricting show-title lookup
+  // to this header prevents an unusual/blank channel title from accidentally
+  // borrowing the first episode's title.
+  const channelMeta = channel.split(/<item\b/i)[0] || channel;
+  const title = text(channelMeta, ["title", "itunes:title", "media:title"]) || localText(channelMeta, "title");
+  const description = text(channelMeta, ["itunes:summary", "description", "subtitle"]) || localText(channelMeta, "description");
+  const image = attr(channelMeta, "itunes:image", "href") || text(channelMeta, ["url"]) || attr(channelMeta, "media:thumbnail", "url");
   const items = [...channel.matchAll(/<item\b[\s\S]*?<\/item>/gi)].map((match) => match[0]);
   const episodes = items.map((item) => {
     const enclosure = attr(item, "enclosure", "url") || attr(item, "media:content", "url");
     const guid = text(item, ["guid"]);
-    const episodeTitle = text(item, ["title", "itunes:title", "media:title"]);
+    const episodeTitle = text(item, ["title", "itunes:title", "media:title"]) || localText(item, "title");
     return {
       id: guid || `${feedUrl}|${enclosure}|${episodeTitle}`,
+      guid,
       title: episodeTitle,
       audioUrl: enclosure,
       publishedAt: text(item, ["pubDate", "dc:date"]) || new Date().toISOString(),
