@@ -1,4 +1,4 @@
-# Podstream v0.2.4
+# Podstream v0.2.5
 
 A deliberately small podcast web app.
 
@@ -123,10 +123,17 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Added Back to Podcasts navigation.
 - Podcast episode lists are sorted newest first and retain the normal play/star controls.
 
-## v0.2.4 fixes
+## v0.2.1 fixes
 
 - Restores the visible **Add** label in the Add Podcast dialog on iPhone.
 - Adds RSS title fallbacks for feeds that leave the standard `<title>` empty but provide `itunes:title` or `media:title` (including Fly on the Wall), and automatically re-fetches subscriptions currently stored as “Untitled podcast”.
 - Refresh now spins while active, immediately reports that a refresh started, and reports updated/failed feed counts when finished.
 - Prevents iOS/Safari from leaving tapped toolbar icons in a latched hover state.
 
+
+
+## v0.2.5
+- Moves full episode archives out of localStorage and into IndexedDB to avoid browser quota failures.
+- Automatically migrates and removes the oversized legacy `podstream-state-v1` cache.
+- Cache-write failures no longer abort Add Podcast or other user actions.
+- If the episode cache is unavailable or empty, signed-in subscriptions automatically re-fetch their feeds.

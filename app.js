@@ -1,6 +1,9 @@
 (() => {
-  const APP_VERSION = '0.2.4';
-  const LS_KEY = 'podstream-state-v1';
+  const APP_VERSION = '0.2.5';
+  const LS_KEY = 'podstream-state-v2';
+  const LEGACY_LS_KEY = 'podstream-state-v1';
+  const CACHE_DB = 'podstream-cache-v1';
+  const CACHE_STORE = 'cache';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_70RugEcKQxZWUa5eQfmyeg_y7AkVz9V';
@@ -38,12 +41,15 @@
   let compressor = null;
   let saveTimer = null;
   let toastTimer = null;
+  let episodeCacheTimer = null;
+  let legacyEpisodesForMigration = null;
 
   document.addEventListener('DOMContentLoaded', init);
 
   async function init() {
     cacheEls();
     loadLocal();
+    await loadEpisodeCache();
     applyTextSize();
     applyTheme();
     bindEvents();
@@ -221,27 +227,117 @@
       const settings = getSettings();
       state.textSize = ['small','medium','large'].includes(settings.textSize) ? settings.textSize : 'medium';
       state.theme = ['system','light','dark'].includes(settings.theme) ? settings.theme : 'system';
-      const raw = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+
+      let raw = {};
+      const current = localStorage.getItem(LS_KEY);
+      if (current) {
+        raw = JSON.parse(current);
+      } else {
+        const legacy = localStorage.getItem(LEGACY_LS_KEY);
+        if (legacy) {
+          raw = JSON.parse(legacy);
+          legacyEpisodesForMigration = raw.episodes || null;
+          // The old key could contain entire podcast archives and consume the
+          // browser's localStorage quota. Free that space immediately; the
+          // episodes are migrated to IndexedDB during startup.
+          localStorage.removeItem(LEGACY_LS_KEY);
+        }
+      }
+
       Object.assign(state, {
         subscriptions: raw.subscriptions || [],
-        episodes: raw.episodes || {},
         playback: raw.playback || {},
         starredEpisodes: raw.starredEpisodes || {},
         starredShows: raw.starredShows || {},
         enhanceVoices: !!raw.enhanceVoices,
       });
-    } catch (_) {}
+      saveLocal();
+    } catch (error) {
+      console.warn('Local state could not be loaded', error);
+      try { localStorage.removeItem(LEGACY_LS_KEY); } catch (_) {}
+    }
   }
 
   function saveLocal() {
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      subscriptions: state.subscriptions,
-      episodes: state.episodes,
-      playback: state.playback,
-      starredEpisodes: state.starredEpisodes,
-      starredShows: state.starredShows,
-      enhanceVoices: state.enhanceVoices,
-    }));
+    // Keep localStorage deliberately small. Full episode archives live in
+    // IndexedDB; localStorage is shared by every app on mojocolony.github.io
+    // and has a comparatively tiny quota. A cache failure must never block an
+    // Add/Star/Playback action.
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        subscriptions: state.subscriptions,
+        playback: state.playback,
+        starredEpisodes: state.starredEpisodes,
+        starredShows: state.starredShows,
+        enhanceVoices: state.enhanceVoices,
+      }));
+    } catch (error) {
+      console.warn('Lightweight local state could not be saved', error);
+    }
+  }
+
+  function openCacheDb() {
+    return new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) return reject(new Error('IndexedDB is unavailable'));
+      const request = indexedDB.open(CACHE_DB, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(CACHE_STORE)) db.createObjectStore(CACHE_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Could not open podcast cache'));
+    });
+  }
+
+  async function cacheGet(key) {
+    const db = await openCacheDb();
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readonly');
+        const request = tx.objectStore(CACHE_STORE).get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    } finally { db.close(); }
+  }
+
+  async function cacheSet(key, value) {
+    const db = await openCacheDb();
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readwrite');
+        tx.objectStore(CACHE_STORE).put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Podcast cache write failed'));
+        tx.onabort = () => reject(tx.error || new Error('Podcast cache write aborted'));
+      });
+    } finally { db.close(); }
+  }
+
+  async function loadEpisodeCache() {
+    try {
+      const cached = await cacheGet('episodes');
+      if (cached && typeof cached === 'object') state.episodes = cached;
+      if (legacyEpisodesForMigration && typeof legacyEpisodesForMigration === 'object') {
+        state.episodes = { ...state.episodes, ...legacyEpisodesForMigration };
+        legacyEpisodesForMigration = null;
+        await cacheSet('episodes', state.episodes);
+      }
+    } catch (error) {
+      console.warn('Episode cache could not be loaded', error);
+      if (legacyEpisodesForMigration && typeof legacyEpisodesForMigration === 'object') {
+        state.episodes = { ...state.episodes, ...legacyEpisodesForMigration };
+        legacyEpisodesForMigration = null;
+      }
+    }
+  }
+
+  function queueEpisodeCacheSave() {
+    clearTimeout(episodeCacheTimer);
+    episodeCacheTimer = setTimeout(async () => {
+      try { await cacheSet('episodes', state.episodes); }
+      catch (error) { console.warn('Episode cache could not be saved', error); }
+    }, 250);
   }
 
   function openMenu() {
@@ -622,6 +718,7 @@
       };
     }
     saveLocal();
+    queueEpisodeCacheSave();
   }
 
   async function refreshAllFeeds() {
@@ -919,7 +1016,7 @@
     if (!['small','medium','large'].includes(size)) return;
     state.textSize = size;
     const settings = getSettings();
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, textSize: size }));
+    safeLocalSet(SETTINGS_KEY, JSON.stringify({ ...settings, textSize: size }));
     applyTextSize();
   }
 
@@ -949,7 +1046,7 @@
     if (!['system','light','dark'].includes(theme)) return;
     state.theme = theme;
     const settings = getSettings();
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, theme }));
+    safeLocalSet(SETTINGS_KEY, JSON.stringify({ ...settings, theme }));
     applyTheme();
   }
 
@@ -979,6 +1076,11 @@
     els.authStatus.textContent = signedIn ? `Signed in as ${state.user.email}` : 'Not signed in.';
   }
 
+  function safeLocalSet(key, value) {
+    try { localStorage.setItem(key, value); }
+    catch (error) { console.warn(`Could not save ${key}`, error); }
+  }
+
   function getSettings() {
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; }
   }
@@ -986,7 +1088,7 @@
   async function saveSettingsAndSignIn() {
     const email = els.emailInput.value.trim();
     const settings = getSettings();
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, email }));
+    safeLocalSet(SETTINGS_KEY, JSON.stringify({ ...settings, email }));
     if (!state.supabase || !email) { els.authStatus.textContent = 'Enter your email to sign in.'; return; }
     if (state.user?.email?.toLowerCase() === email.toLowerCase()) {
       els.authStatus.textContent = `Already signed in as ${state.user.email}`;
@@ -1053,7 +1155,8 @@
           local.image = sub.image_url || local.image;
           local.description = sub.description || local.description || '';
         }
-        if (!local || !local.description || !local.title || /^Untitled podcast$/i.test(local.title)) {
+        const hasCachedEpisodes = !!local && Object.values(state.episodes).some(ep => ep.showId === local.id);
+        if (!local || !hasCachedEpisodes || !local.description || !local.title || /^Untitled podcast$/i.test(local.title)) {
           try {
             const feed = await fetchFeed(sub.feed_url);
             const canonicalUrl = feed.feedUrl || feed.id || sub.feed_url;
