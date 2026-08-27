@@ -15,6 +15,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json().catch(() => ({}));
     const input = typeof body?.url === "string" ? body.url.trim() : "";
+    const backfill = body?.backfill === true;
     if (!input) return json({ error: "Missing url" });
 
     const startUrl = normalizeUrl(input);
@@ -25,7 +26,8 @@ Deno.serve(async (req: Request) => {
     // and store the publisher's canonical RSS URL rather than accidentally
     // discovering an unrelated link from the Apple HTML.
     const appleId = applePodcastId(startUrl);
-    const appleFeedUrl = await resolveApplePodcastUrl(startUrl);
+    const appleDirectory = appleId ? await lookupApplePodcast(startUrl) : null;
+    const appleFeedUrl = appleDirectory?.feedUrl ? normalizeUrl(appleDirectory.feedUrl) : "";
     if (appleId && !appleFeedUrl) {
       return json({ error: "Could not resolve that Apple Podcasts link to its RSS feed." });
     }
@@ -33,7 +35,7 @@ Deno.serve(async (req: Request) => {
     const first = await safeFetchText(fetchUrl, "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html, */*;q=0.5");
 
     if (looksLikeFeed(first.text, first.contentType)) {
-      const feed = await enrichFeedMetadata(parseFeed(first.text, first.url));
+      const feed = await enrichFeedMetadata(parseFeed(first.text, first.url), { backfill, directoryHint: appleDirectory });
       if (feed.episodes.length) return json(feed);
     }
 
@@ -113,7 +115,7 @@ async function fetchJson(input: string, timeoutMs = 10000) {
     const response = await fetch(input, {
       signal: controller.signal,
       headers: {
-        "user-agent": "Podstream/0.2.2 (+personal podcast reader)",
+        "user-agent": "Podstream/0.2.6 (+personal podcast reader)",
         "accept": "application/json",
       },
     });
@@ -124,16 +126,14 @@ async function fetchJson(input: string, timeoutMs = 10000) {
   }
 }
 
-async function resolveApplePodcastUrl(input: string) {
+async function lookupApplePodcast(input: string) {
   const id = applePodcastId(input);
-  if (!id) return "";
+  if (!id) return null;
   const endpoint = new URL("https://itunes.apple.com/lookup");
   endpoint.searchParams.set("id", id);
   const payload = await fetchJson(endpoint.toString());
   const results = Array.isArray(payload?.results) ? payload.results : [];
-  const podcast = results.find((result: any) => typeof result?.feedUrl === "string" && result.feedUrl);
-  const feedUrl = podcast?.feedUrl || "";
-  return normalizeUrl(feedUrl) || "";
+  return results.find((result: any) => typeof result?.feedUrl === "string" && result.feedUrl) || null;
 }
 
 function normalizedFeedKey(value: string) {
@@ -172,25 +172,26 @@ async function appleDirectoryMatchForFeed(feedUrl: string) {
   return results.find((result: any) => typeof result?.feedUrl === "string" && normalizedFeedKey(result.feedUrl) === key) || null;
 }
 
-async function enrichFeedMetadata(feed: any) {
+async function enrichFeedMetadata(feed: any, options: { backfill?: boolean; directoryHint?: any } = {}) {
+  const backfill = !!options.backfill;
+  feed.backfillAttempted = backfill;
   const missingTitles = (feed.episodes || []).filter((episode: any) => !String(episode?.title || "").trim());
-  if (feed.title && !missingTitles.length) return feed;
+  const needsDirectory = backfill || !feed.title || missingTitles.length > 0;
+  if (!needsDirectory) return feed;
 
-  const directory = await appleDirectoryMatchForFeed(feed.feedUrl || feed.id || "");
+  const directory = options.directoryHint || await appleDirectoryMatchForFeed(feed.feedUrl || feed.id || "");
   if (!directory) return feed;
 
   if (!feed.title) feed.title = String(directory.collectionName || directory.trackName || "").trim();
   if (!feed.image) feed.image = directory.artworkUrl600 || directory.artworkUrl100 || "";
+  const catalogTotal = Number(directory.trackCount) || 0;
+  if (catalogTotal > 0) feed.catalogTotal = catalogTotal;
   const collectionId = directory.collectionId || directory.trackId;
-  if (!missingTitles.length || !collectionId) return feed;
+  if (!collectionId) return feed;
 
-  const endpoint = new URL("https://itunes.apple.com/lookup");
-  endpoint.searchParams.set("id", String(collectionId));
-  endpoint.searchParams.set("entity", "podcastEpisode");
-  endpoint.searchParams.set("limit", "200");
-  const payload = await fetchJson(endpoint.toString());
-  const results = Array.isArray(payload?.results) ? payload.results : [];
-  const episodeResults = results.filter((result: any) => result?.kind === "podcast-episode" || result?.wrapperType === "podcastEpisode");
+  const episodeResults = await fetchAppleEpisodes(String(collectionId));
+  if (!episodeResults.length) return feed;
+
   const byGuid = new Map<string, any>();
   const byAudio = new Map<string, any>();
   for (const result of episodeResults) {
@@ -201,16 +202,57 @@ async function enrichFeedMetadata(feed: any) {
   }
 
   for (const episode of feed.episodes || []) {
-    if (String(episode?.title || "").trim()) continue;
     const guid = String(episode?.guid || episode?.id || "");
     const match = byGuid.get(guid) || (episode?.audioUrl ? byAudio.get(normalizedFeedKey(episode.audioUrl)) : null);
     if (!match) continue;
-    episode.title = String(match.trackName || "").trim();
+    if (!String(episode?.title || "").trim()) episode.title = String(match.trackName || "").trim();
     if (!episode.duration && match.trackTimeMillis) episode.duration = Number(match.trackTimeMillis) / 1000;
     if ((!episode.publishedAt || episode.publishedAt === "") && match.releaseDate) episode.publishedAt = match.releaseDate;
     if (!episode.image) episode.image = match.artworkUrl600 || match.artworkUrl100 || feed.image || "";
   }
+
+  if (backfill) {
+    const existingGuids = new Set((feed.episodes || []).map((ep: any) => String(ep?.guid || ep?.id || "")).filter(Boolean));
+    const existingAudio = new Set((feed.episodes || []).map((ep: any) => ep?.audioUrl ? normalizedFeedKey(ep.audioUrl) : "").filter(Boolean));
+    let added = 0;
+    for (const result of episodeResults) {
+      const audioUrl = typeof result?.episodeUrl === "string" && result.episodeUrl ? result.episodeUrl : (typeof result?.previewUrl === "string" ? result.previewUrl : "");
+      if (!audioUrl) continue;
+      const guid = String(result?.episodeGuid || "");
+      const audioKey = normalizedFeedKey(audioUrl);
+      if ((guid && existingGuids.has(guid)) || existingAudio.has(audioKey)) continue;
+      const trackId = String(result?.trackId || result?.episodeId || "");
+      const title = String(result?.trackName || result?.episodeName || "").trim();
+      feed.episodes.push({
+        id: guid || (trackId ? `apple:${trackId}` : `${feed.feedUrl}|${audioUrl}|${title}`),
+        guid,
+        title: title || "Untitled episode",
+        audioUrl,
+        publishedAt: result?.releaseDate || new Date().toISOString(),
+        duration: result?.trackTimeMillis ? Number(result.trackTimeMillis) / 1000 : 0,
+        image: result?.artworkUrl600 || result?.artworkUrl100 || feed.image || "",
+        source: "apple-directory",
+      });
+      if (guid) existingGuids.add(guid);
+      existingAudio.add(audioKey);
+      added += 1;
+    }
+    feed.catalogAdded = added;
+    feed.episodes.sort((a: any, b: any) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime());
+  }
   return feed;
+}
+
+async function fetchAppleEpisodes(collectionId: string) {
+  const endpoint = new URL("https://itunes.apple.com/lookup");
+  endpoint.searchParams.set("id", collectionId);
+  endpoint.searchParams.set("entity", "podcastEpisode");
+  endpoint.searchParams.set("limit", "200");
+  const payload = await fetchJson(endpoint.toString());
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  return results.filter((result: any) =>
+    result?.kind === "podcast-episode" || result?.wrapperType === "podcastEpisode" || result?.wrapperType === "podcast-episode"
+  );
 }
 
 async function safeFetchText(input: string, accept: string) {
@@ -228,7 +270,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.2.2 (+personal podcast reader)",
+          "user-agent": "Podstream/0.2.6 (+personal podcast reader)",
           accept,
         },
       });
@@ -400,7 +442,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.2.2 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.2.6 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
@@ -546,6 +588,7 @@ function parseRssFeed(xml: string, feedUrl: string) {
       publishedAt: text(item, ["pubDate", "dc:date"]) || new Date().toISOString(),
       duration: parseDuration(text(item, ["itunes:duration"])),
       image: attr(item, "itunes:image", "href") || attr(item, "media:thumbnail", "url") || image,
+      source: "rss",
     };
   }).filter((episode) => episode.audioUrl);
   return { id: feedUrl, feedUrl, title, description, image, episodes };
@@ -567,6 +610,7 @@ function parseAtomFeed(xml: string, feedUrl: string) {
       publishedAt: text(entry, ["published", "updated"]) || new Date().toISOString(),
       duration: parseDuration(text(entry, ["itunes:duration"])),
       image,
+      source: "rss",
     };
   }).filter((episode) => episode.audioUrl);
   return { id: feedUrl, feedUrl, title, description, image, episodes };

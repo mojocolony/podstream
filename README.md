@@ -1,4 +1,4 @@
-# Podstream v0.2.5
+# Podstream v0.2.6
 
 A deliberately small podcast web app.
 
@@ -21,9 +21,10 @@ Podstream is connected to the existing shared personal Supabase project, but its
 - `podstream_playback_positions`
 - `podstream_stars`
 - `podstream_settings`
-- Edge Function: `podstream-fetch-feed`
+- `podstream_episode_archive`
+- Edge Functions: `podstream-fetch-feed` and `podstream-catalog-backfill`
 
-All four tables have Row Level Security enabled and are restricted to the signed-in user's own rows. The GitHub Pages client contains only the project's public/publishable key; no secret or service-role key is included.
+All Podstream tables have Row Level Security enabled and are restricted to the signed-in user's own rows. The GitHub Pages client contains only the project's public/publishable key; no secret or service-role key is included.
 
 ## Sign in
 
@@ -45,6 +46,18 @@ The toggle uses browser Web Audio processing:
 
 Processing occurs locally while audio streams. Some podcast hosts do not permit the browser CORS access needed for Web Audio processing; on those streams normal playback continues, but Enhance Voices is unavailable.
 
+
+
+## v0.2.6
+
+- Adds a Now Playing overlay opened from the compact bottom player.
+- Now Playing includes large artwork, episode/show titles, full scrub controls, ±15 seconds, play/pause, Star, Enhance Voices, and a View podcast episodes action.
+- Restores Space as a reliable global play/pause shortcut even when a toolbar/player button still has focus.
+- Keeps Left/Right Arrow ±15-second shortcuts when focus is not inside an interactive control.
+- Adds a synced `podstream_episode_archive` table so Podstream retains every episode it has learned about even when a publisher later shortens its live RSS feed.
+- On new subscriptions, and on existing feeds with suspiciously small catalogues, performs a one-time Apple directory backfill of up to 200 playable episodes and then keeps them permanently in the Podstream archive.
+- Stores Apple's total catalogue count when available so the podcast info popup can distinguish playable archived episodes from Apple's larger directory count.
+- Existing IndexedDB episode data is uploaded into the server-side archive after sign-in, so older locally known episodes become available on other devices.
 
 ## v0.2.4
 

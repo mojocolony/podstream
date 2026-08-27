@@ -540,3 +540,42 @@ html[data-theme="dark"] .skip-icon-img { filter: invert(1) brightness(.95); }
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] .skip-icon-img { filter: invert(1) brightness(.95); }
 }
+
+/* v0.2.6 — Now Playing */
+.player-meta .player-titles { cursor:pointer; border-radius:8px; }
+.player-meta .player-titles:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.now-playing-dialog { width:min(92vw,760px); }
+.now-playing-card { padding:24px; }
+.now-playing-head { margin-bottom:20px; }
+.now-playing-body { display:grid; grid-template-columns:minmax(220px,300px) minmax(0,1fr); gap:28px; align-items:center; }
+.now-playing-art { width:100%; aspect-ratio:1; border-radius:22px; overflow:hidden; background:var(--panel-2); box-shadow:0 14px 36px var(--shadow-soft); }
+.now-playing-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.now-playing-art .art-placeholder { width:100%; height:100%; display:grid; place-items:center; color:var(--muted); }
+.now-playing-art .art-placeholder svg { width:56px; height:56px; }
+.now-playing-copy { min-width:0; }
+.now-playing-title { font-size:calc(25px + var(--font-bump)); line-height:1.16; letter-spacing:-.025em; font-weight:780; }
+.now-playing-show { display:block; margin:11px 0 18px; padding:0; border:0; background:transparent; color:var(--muted); font:inherit; font-size:calc(15px + var(--font-bump)); text-align:left; cursor:default; }
+.now-playing-podcast-button { width:max-content; max-width:100%; }
+.now-playing-transport { margin-top:28px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.now-playing-buttons { display:flex; align-items:center; gap:18px; }
+.now-playing-play { width:64px; height:64px; }
+.now-playing-play svg { width:27px; height:27px; }
+.now-playing-transport .skip-button { width:54px; height:54px; }
+.now-playing-transport .skip-icon-img { width:38px; height:38px; }
+.now-playing-scrub { width:min(100%,620px); grid-template-columns:48px minmax(0,1fr) 48px; }
+.now-playing-actions { display:flex; justify-content:center; gap:10px; margin-top:18px; }
+.now-playing-actions .secondary-button.active { background:var(--accent); color:white; }
+
+@media (max-width: 700px) {
+  .now-playing-dialog { width:calc(100vw - 20px); max-width:none; }
+  .now-playing-card { padding:18px; }
+  .now-playing-body { grid-template-columns:1fr; gap:18px; }
+  .now-playing-art { width:min(72vw,340px); justify-self:center; border-radius:18px; }
+  .now-playing-copy { text-align:center; }
+  .now-playing-title { font-size:calc(23px + var(--font-bump)); }
+  .now-playing-show { text-align:center; margin:9px 0 15px; width:100%; }
+  .now-playing-podcast-button { margin:0 auto; }
+  .now-playing-transport { margin-top:22px; }
+  .now-playing-actions { flex-direction:column; }
+  .now-playing-actions > * { width:100%; }
+}

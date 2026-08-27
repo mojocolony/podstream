@@ -47,7 +47,7 @@
       </nav>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-version">v0.2.5</div>
+        <div class="sidebar-version">v0.2.6</div>
       </div>
     </aside>
     <div class="sidebar-scrim" id="sidebarScrim" aria-hidden="true"></div>
@@ -72,8 +72,8 @@
 
   <section class="player hidden" id="player" aria-label="Podcast player">
     <div class="player-meta">
-      <button class="art-button" id="playerArtButton" aria-label="Star episode"><div class="art-placeholder"><i data-lucide="radio"></i></div></button>
-      <div class="player-titles">
+      <button class="art-button" id="playerArtButton" aria-label="Open Now Playing"><div class="art-placeholder"><i data-lucide="radio"></i></div></button>
+      <div class="player-titles" role="button" tabindex="0" aria-label="Open Now Playing">
         <div class="player-title" id="playerTitle">Episode</div>
         <div class="player-show" id="playerShow">Podcast</div>
       </div>
@@ -98,6 +98,43 @@
     </div>
     <audio id="audio" preload="metadata"></audio>
   </section>
+
+
+  <dialog id="nowPlayingDialog" class="now-playing-dialog">
+    <div class="dialog-card now-playing-card">
+      <div class="dialog-head now-playing-head">
+        <div>
+          <h2>Now Playing</h2>
+          <p>Current episode</p>
+        </div>
+        <button class="icon-button" type="button" data-dialog-close aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="now-playing-body">
+        <div class="now-playing-art" id="nowPlayingArt"><div class="art-placeholder"><i data-lucide="radio"></i></div></div>
+        <div class="now-playing-copy">
+          <div class="now-playing-title" id="nowPlayingTitle">Episode</div>
+          <button class="now-playing-show" id="nowPlayingShow" type="button" tabindex="-1">Podcast</button>
+          <button class="secondary-button now-playing-podcast-button" id="nowPlayingPodcastButton" type="button"><i data-lucide="list-music"></i><span>View podcast episodes</span></button>
+        </div>
+      </div>
+      <div class="now-playing-transport">
+        <div class="now-playing-buttons">
+          <button class="icon-button skip-button" id="nowPlayingBack15" aria-label="Back 15 seconds"><img src="assets/backward-15.png" alt="" class="skip-icon-img" /></button>
+          <button class="play-button now-playing-play" id="nowPlayingPlayPause" aria-label="Play"><i data-lucide="play"></i></button>
+          <button class="icon-button skip-button" id="nowPlayingForward15" aria-label="Forward 15 seconds"><img src="assets/forward-15.png" alt="" class="skip-icon-img" /></button>
+        </div>
+        <div class="scrub-row now-playing-scrub">
+          <span class="time" id="nowPlayingCurrentTime">0:00</span>
+          <input type="range" id="nowPlayingSeek" min="0" max="100" value="0" step="0.1" aria-label="Playback position" />
+          <span class="time" id="nowPlayingDuration">0:00</span>
+        </div>
+      </div>
+      <div class="now-playing-actions">
+        <button class="enhance-button" id="nowPlayingEnhanceButton" aria-pressed="false"><i data-lucide="audio-lines"></i><span>Enhance Voices</span></button>
+        <button class="secondary-button" id="nowPlayingStarButton" type="button" aria-pressed="false"><i data-lucide="star"></i><span>Star episode</span></button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="addPodcastDialog">
     <form method="dialog" class="dialog-card" id="addPodcastForm">

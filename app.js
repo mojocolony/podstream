@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.2.5';
+  const APP_VERSION = '0.2.6';
   const LS_KEY = 'podstream-state-v2';
   const LEGACY_LS_KEY = 'podstream-state-v1';
   const CACHE_DB = 'podstream-cache-v1';
@@ -8,6 +8,7 @@
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_70RugEcKQxZWUa5eQfmyeg_y7AkVz9V';
   const FEED_FUNCTION = 'podstream-fetch-feed';
+  const CATALOG_FUNCTION = 'podstream-catalog-backfill';
   const AUTH_STORAGE_PREFIX = 'podstream-auth-v1:';
   const DARK_QUERY = window.matchMedia('(prefers-color-scheme: dark)');
   const podstreamAuthStorage = {
@@ -60,7 +61,7 @@
   }
 
   function cacheEls() {
-    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','podcastInfoDialog','podcastInfoTitle','podcastInfoMeta','podcastInfoBody','podcastInfoStarButton','podcastInfoRemoveButton','podcastInfoEpisodesButton','settingsDialog','settingsButton','settingsSubtitle','syncButton','menuButton','sidebar','sidebarScrim','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
+    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','podcastInfoDialog','podcastInfoTitle','podcastInfoMeta','podcastInfoBody','podcastInfoStarButton','podcastInfoRemoveButton','podcastInfoEpisodesButton','nowPlayingDialog','nowPlayingArt','nowPlayingTitle','nowPlayingShow','nowPlayingPodcastButton','nowPlayingBack15','nowPlayingPlayPause','nowPlayingForward15','nowPlayingSeek','nowPlayingCurrentTime','nowPlayingDuration','nowPlayingEnhanceButton','nowPlayingStarButton','settingsDialog','settingsButton','settingsSubtitle','syncButton','menuButton','sidebar','sidebarScrim','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
   }
 
   function bindEvents() {
@@ -75,7 +76,7 @@
     });
     els.addPodcastForm.addEventListener('submit', handleAddPodcast);
     document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => btn.closest('dialog')?.close()));
-    [els.addPodcastDialog, els.podcastInfoDialog, els.settingsDialog].forEach(dialog => {
+    [els.addPodcastDialog, els.podcastInfoDialog, els.nowPlayingDialog, els.settingsDialog].forEach(dialog => {
       dialog.addEventListener('click', (ev) => {
         if (ev.target === dialog) dialog.close();
       });
@@ -124,7 +125,26 @@
     bindAudioEvents();
     els.enhanceButton.addEventListener('click', toggleEnhance);
     els.starEpisodeButton.addEventListener('click', () => toggleStarEpisode(state.currentEpisodeId));
-    els.playerArtButton.addEventListener('click', () => toggleStarEpisode(state.currentEpisodeId));
+    els.playerArtButton.addEventListener('click', openNowPlaying);
+    els.player.querySelector('.player-titles')?.addEventListener('click', openNowPlaying);
+    els.player.querySelector('.player-titles')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openNowPlaying(); }
+    });
+    els.nowPlayingBack15.addEventListener('click', () => jumpPlayback(-15));
+    els.nowPlayingPlayPause.addEventListener('click', togglePlay);
+    els.nowPlayingForward15.addEventListener('click', () => jumpPlayback(15));
+    els.nowPlayingSeek.addEventListener('input', () => {
+      if (Number.isFinite(els.audio.duration)) els.audio.currentTime = Number(els.nowPlayingSeek.value) / 100 * els.audio.duration;
+    });
+    els.nowPlayingEnhanceButton.addEventListener('click', toggleEnhance);
+    els.nowPlayingStarButton.addEventListener('click', () => toggleStarEpisode(state.currentEpisodeId));
+    els.nowPlayingPodcastButton.addEventListener('click', () => {
+      const ep = state.episodes[state.currentEpisodeId];
+      if (!ep) return;
+      els.nowPlayingDialog.close();
+      setView('podcasts');
+      openPodcast(ep.showId);
+    });
     window.addEventListener('beforeunload', () => persistPlayback(false));
   }
 
@@ -493,7 +513,7 @@
       <div class="podcast-card-main">
         <div class="subscription-title">${esc(s.title || 'Untitled podcast')}</div>
         ${s.description ? `<div class="subscription-description">${esc(s.description)}</div>` : `<div class="subscription-description muted">No description supplied by this podcast.</div>`}
-        <div class="subscription-meta">${s.episodeCount || 0} episodes loaded</div>
+        <div class="subscription-meta">${episodeCountForShow(s.id)} episodes available</div>
       </div>
       <span class="subscription-open-icon" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
     </article>`).join('')}</div>`;
@@ -512,7 +532,7 @@
     const episodes = Object.values(state.episodes).filter(e => e.showId === showId);
     els.podcastInfoDialog.dataset.showId = showId;
     els.podcastInfoTitle.textContent = decodeHtmlText(sub.title || 'Untitled podcast');
-    els.podcastInfoMeta.textContent = `${episodes.length} episode${episodes.length === 1 ? '' : 's'} loaded`;
+    els.podcastInfoMeta.textContent = `${episodes.length} episode${episodes.length === 1 ? '' : 's'} available${sub.catalogTotal && sub.catalogTotal > episodes.length ? ` · ${sub.catalogTotal} listed by Apple` : ''}`;
     els.podcastInfoBody.innerHTML = `<div class="podcast-info-summary">
       ${coverMarkup(sub.image, sub.title)}
       <div class="podcast-info-description">${sub.description ? esc(sub.description) : '<span class="muted">No description supplied by this podcast.</span>'}</div>
@@ -609,7 +629,7 @@
     const submit = document.getElementById('addFeedSubmit');
     if (submit) submit.disabled = true;
     try {
-      const result = await fetchFeed(url);
+      const result = await fetchFeed(url, { backfill: false });
       if (Array.isArray(result?.choices) && result.choices.length > 1) {
         renderFeedChoices(result.choices);
         return;
@@ -651,16 +671,31 @@
   }
 
   async function addDiscoveredFeed(feed) {
-    const feedUrl = feed.feedUrl || feed.id;
+    let finalFeed = feed;
+    let feedUrl = finalFeed.feedUrl || finalFeed.id;
     if (!feedUrl) throw new Error('The discovered feed did not include a usable URL.');
-    upsertFeed(feed, feedUrl);
-    await syncSubscriptionToRemote(feedUrl, feed);
+
+    // Re-fetch the chosen canonical feed, then ask the dedicated catalogue
+    // backfill function for older Apple-indexed episodes. Discovery itself
+    // stays lightweight even when a website exposes several candidate feeds.
+    try {
+      const refreshed = await fetchFeed(feedUrl);
+      if (refreshed && !Array.isArray(refreshed.choices)) finalFeed = refreshed;
+    } catch (error) {
+      console.warn('Canonical feed refresh failed; using discovered feed.', error);
+    }
+    finalFeed = await applyCatalogBackfill(finalFeed);
+
+    feedUrl = finalFeed.feedUrl || finalFeed.id || feedUrl;
+    const archived = upsertFeed(finalFeed, feedUrl);
+    await syncSubscriptionToRemote(feedUrl, finalFeed);
+    await syncEpisodesToRemote(archived, feedUrl);
     els.addPodcastDialog.close();
     setView('stream');
-    toast('Podcast added');
+    toast(finalFeed.catalogAdded ? `Podcast added · ${finalFeed.catalogAdded} older episodes found` : 'Podcast added');
   }
 
-  async function fetchFeed(url) {
+  async function fetchFeed(url, { backfill = false } = {}) {
     if (!state.supabase || !state.remoteReady) {
       throw new Error('Sign in first so Podstream can securely find podcast feeds and sync your library.');
     }
@@ -680,45 +715,101 @@
     return data;
   }
 
+  async function fetchCatalogBackfill(feed) {
+    if (!state.supabase || !state.remoteReady || !feed?.feedUrl) return null;
+    const { data, error } = await state.supabase.functions.invoke(CATALOG_FUNCTION, {
+      body: { feedUrl: feed.feedUrl, title: feed.title || '' },
+    });
+    if (error) {
+      console.warn('Catalogue backfill function failed', error);
+      return null;
+    }
+    if (data?.error) {
+      console.warn('Catalogue backfill unavailable', data.error);
+      return null;
+    }
+    return data || null;
+  }
+
+  async function applyCatalogBackfill(feed) {
+    if (!feed) return feed;
+    const catalog = await fetchCatalogBackfill(feed);
+    feed.backfillAttempted = !!catalog;
+    if (!catalog) return feed;
+    feed.catalogTotal = Number(catalog.catalogTotal) || Number(feed.catalogTotal) || 0;
+    const existingGuids = new Set((feed.episodes || []).map(ep => String(ep?.guid || ep?.id || '')).filter(Boolean));
+    const existingAudio = new Set((feed.episodes || []).map(ep => ep?.audioUrl || '').filter(Boolean));
+    let added = 0;
+    for (const ep of (catalog.episodes || [])) {
+      if (!ep?.audioUrl) continue;
+      const guid = String(ep.guid || ep.id || '');
+      if ((guid && existingGuids.has(guid)) || existingAudio.has(ep.audioUrl)) continue;
+      (feed.episodes ||= []).push({ ...ep, source: 'apple-directory' });
+      if (guid) existingGuids.add(guid);
+      existingAudio.add(ep.audioUrl);
+      added += 1;
+    }
+    feed.catalogAdded = added;
+    feed.episodes.sort((a,b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+    return feed;
+  }
+
   function upsertFeed(feed, feedUrl, previousFeedUrl = null) {
     const showId = feed.id || hash(feedUrl);
+    const idx = state.subscriptions.findIndex(s => s.id === showId || s.feedUrl === feedUrl || (previousFeedUrl && s.feedUrl === previousFeedUrl));
+    const previous = idx >= 0 ? state.subscriptions[idx] : null;
     const sub = {
       id: showId,
       feedUrl,
-      title: feed.title || 'Untitled podcast',
-      image: feed.image || '',
-      description: feed.description || '',
-      episodeCount: (feed.episodes || []).length,
+      title: feed.title || previous?.title || 'Untitled podcast',
+      image: feed.image || previous?.image || '',
+      description: feed.description || previous?.description || '',
+      episodeCount: previous?.episodeCount || 0,
+      catalogTotal: Number(feed.catalogTotal) || Number(previous?.catalogTotal) || 0,
+      backfilledAt: feed.backfillAttempted ? Date.now() : (previous?.backfilledAt || null),
       updatedAt: Date.now(),
     };
-    const idx = state.subscriptions.findIndex(s => s.id === showId || s.feedUrl === feedUrl || (previousFeedUrl && s.feedUrl === previousFeedUrl));
-    const previous = idx >= 0 ? state.subscriptions[idx] : null;
+
     if (idx >= 0) {
-      // If discovery resolves a directory/web URL to the publisher's canonical
-      // RSS URL, replace the old subscription in place instead of leaving a
-      // duplicate/bogus show behind.
       if (previous?.id && previous.id !== showId) {
         if (state.starredShows[previous.id]) {
           state.starredShows[showId] = true;
           delete state.starredShows[previous.id];
         }
-        for (const [episodeId, episode] of Object.entries(state.episodes)) {
-          if (episode.showId === previous.id) delete state.episodes[episodeId];
+        for (const episode of Object.values(state.episodes)) {
+          if (episode.showId === previous.id) episode.showId = showId;
         }
         if (state.selectedPodcastId === previous.id) state.selectedPodcastId = showId;
       }
       state.subscriptions[idx] = { ...state.subscriptions[idx], ...sub };
     } else state.subscriptions.push(sub);
 
+    const archived = [];
     for (const ep of (feed.episodes || [])) {
-      const id = ep.id || hash(`${showId}|${ep.audioUrl}|${ep.title}`);
-      state.episodes[id] = {
-        id, showId, showTitle: sub.title, title: ep.title || 'Untitled episode', audioUrl: ep.audioUrl,
-        publishedAt: ep.publishedAt || new Date().toISOString(), image: ep.image || sub.image || '', duration: Number(ep.duration) || 0,
+      if (!ep?.audioUrl) continue;
+      let id = ep.id || hash(`${showId}|${ep.audioUrl}|${ep.title}`);
+      const sameAudio = Object.values(state.episodes).find(existing => existing.showId === showId && existing.audioUrl === ep.audioUrl);
+      if (sameAudio) id = sameAudio.id;
+      const normalized = {
+        id, showId, feedUrl, showTitle: sub.title, title: ep.title || sameAudio?.title || 'Untitled episode', audioUrl: ep.audioUrl,
+        publishedAt: ep.publishedAt || sameAudio?.publishedAt || new Date().toISOString(), image: ep.image || sameAudio?.image || sub.image || '',
+        duration: Number(ep.duration) || Number(sameAudio?.duration) || 0, source: ep.source || sameAudio?.source || 'rss',
       };
+      state.episodes[id] = { ...sameAudio, ...state.episodes[id], ...normalized };
+      archived.push(state.episodes[id]);
     }
+    sub.episodeCount = episodeCountForShow(showId);
+    const subIndex = state.subscriptions.findIndex(x => x.id === showId);
+    if (subIndex >= 0) state.subscriptions[subIndex] = { ...state.subscriptions[subIndex], episodeCount: sub.episodeCount };
     saveLocal();
     queueEpisodeCacheSave();
+    return archived;
+  }
+
+  function episodeCountForShow(showId) {
+    let count = 0;
+    for (const episode of Object.values(state.episodes)) if (episode.showId === showId) count += 1;
+    return count;
   }
 
   async function refreshAllFeeds() {
@@ -741,8 +832,9 @@
           const feed = await fetchFeed(s.feedUrl);
           const canonicalUrl = feed.feedUrl || feed.id || s.feedUrl;
           const oldUrl = s.feedUrl;
-          upsertFeed(feed, canonicalUrl, oldUrl);
+          const archived = upsertFeed(feed, canonicalUrl, oldUrl);
           await syncSubscriptionToRemote(canonicalUrl, feed);
+          await syncEpisodesToRemote(archived, canonicalUrl);
           if (canonicalUrl !== oldUrl) await removeRemoteSubscriptionByUrl(oldUrl);
           updated += 1;
         } catch (e) {
@@ -811,7 +903,12 @@
 
   function renderPlayer() {
     const ep = state.episodes[state.currentEpisodeId];
-    if (!ep) { els.player.classList.add('hidden'); document.body.classList.remove('player-visible'); return; }
+    if (!ep) {
+      els.player.classList.add('hidden');
+      document.body.classList.remove('player-visible');
+      if (els.nowPlayingDialog?.open) els.nowPlayingDialog.close();
+      return;
+    }
     els.player.classList.remove('hidden');
     document.body.classList.add('player-visible');
     els.playerTitle.textContent = decodeHtmlText(ep.title);
@@ -820,6 +917,29 @@
     els.enhanceButton.setAttribute('aria-pressed', String(state.enhanceVoices));
     els.starEpisodeButton.classList.toggle('active', !!state.starredEpisodes[ep.id]);
     els.starEpisodeButton.innerHTML = `<i data-lucide="star"></i>`;
+    updatePlayButton();
+    updateScrub();
+    if (els.nowPlayingDialog?.open) renderNowPlaying();
+    lucide.createIcons();
+  }
+
+  function openNowPlaying() {
+    if (!state.currentEpisodeId || !state.episodes[state.currentEpisodeId]) return;
+    renderNowPlaying();
+    if (!els.nowPlayingDialog.open) els.nowPlayingDialog.showModal();
+  }
+
+  function renderNowPlaying() {
+    const ep = state.episodes[state.currentEpisodeId];
+    if (!ep) return;
+    els.nowPlayingArt.innerHTML = ep.image ? `<img src="${escAttr(ep.image)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
+    els.nowPlayingTitle.textContent = decodeHtmlText(ep.title);
+    els.nowPlayingShow.textContent = decodeHtmlText(ep.showTitle);
+    els.nowPlayingEnhanceButton.setAttribute('aria-pressed', String(state.enhanceVoices));
+    els.nowPlayingStarButton.classList.toggle('active', !!state.starredEpisodes[ep.id]);
+    els.nowPlayingStarButton.setAttribute('aria-pressed', String(!!state.starredEpisodes[ep.id]));
+    updatePlayButton();
+    updateScrub();
     lucide.createIcons();
   }
 
@@ -841,14 +961,22 @@
     if (!state.currentEpisodeId || els.player.classList.contains('hidden')) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-    const target = event.target;
-    if (target instanceof Element && target.closest('input, textarea, select, button, a, [contenteditable="true"], [role="textbox"]')) return;
-    if (document.querySelector('dialog[open]')) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const typing = target?.closest('input:not([type="range"]), textarea, select, [contenteditable="true"], [role="textbox"]');
+    const blockingDialog = [...document.querySelectorAll('dialog[open]')].some(dialog => dialog !== els.nowPlayingDialog);
+    if (typing || blockingDialog) return;
 
     if (event.code === 'Space') {
+      // Space is a global playback shortcut. Do not let a previously focused
+      // toolbar button steal it after a mouse/touch interaction.
       event.preventDefault();
       togglePlay();
-    } else if (event.key === 'ArrowLeft') {
+      return;
+    }
+
+    // Preserve normal keyboard behavior for sliders/buttons when using arrows.
+    if (target?.closest('input, textarea, select, button, a, [contenteditable="true"]')) return;
+    if (event.key === 'ArrowLeft') {
       event.preventDefault();
       jumpPlayback(-15);
     } else if (event.key === 'ArrowRight') {
@@ -876,11 +1004,20 @@
     els.currentTime.textContent = formatTime(t);
     els.duration.textContent = formatTime(d);
     els.seek.value = Number.isFinite(d) && d > 0 ? (t / d * 100) : 0;
+    if (els.nowPlayingSeek) {
+      els.nowPlayingCurrentTime.textContent = formatTime(t);
+      els.nowPlayingDuration.textContent = formatTime(d);
+      els.nowPlayingSeek.value = Number.isFinite(d) && d > 0 ? (t / d * 100) : 0;
+    }
   }
 
   function updatePlayButton() {
     els.playPause.innerHTML = els.audio.paused ? '<i data-lucide="play"></i>' : '<i data-lucide="pause"></i>';
     els.playPause.setAttribute('aria-label', els.audio.paused ? 'Play' : 'Pause');
+    if (els.nowPlayingPlayPause) {
+      els.nowPlayingPlayPause.innerHTML = els.audio.paused ? '<i data-lucide="play"></i>' : '<i data-lucide="pause"></i>';
+      els.nowPlayingPlayPause.setAttribute('aria-label', els.audio.paused ? 'Play' : 'Pause');
+    }
     lucide.createIcons();
   }
 
@@ -1133,11 +1270,12 @@
   async function hydrateRemote() {
     if (!state.remoteReady) return;
     try {
-      const [subsRes, playsRes, starsRes, settingsRes] = await Promise.all([
+      const [subsRes, playsRes, starsRes, settingsRes, archivedRows] = await Promise.all([
         state.supabase.from('podstream_subscriptions').select('*').order('created_at'),
         state.supabase.from('podstream_playback_positions').select('*'),
         state.supabase.from('podstream_stars').select('*'),
         state.supabase.from('podstream_settings').select('*').maybeSingle(),
+        fetchRemoteEpisodeArchive(),
       ]);
       for (const result of [subsRes, playsRes, starsRes, settingsRes]) {
         if (result.error) throw result.error;
@@ -1147,6 +1285,7 @@
       const plays = playsRes.data || [];
       const stars = starsRes.data || [];
       const remoteSettings = settingsRes.data;
+      mergeRemoteEpisodeArchive(archivedRows);
 
       for (const sub of subs) {
         const local = state.subscriptions.find(x => x.feedUrl === sub.feed_url);
@@ -1154,14 +1293,22 @@
           local.title = sub.title || local.title;
           local.image = sub.image_url || local.image;
           local.description = sub.description || local.description || '';
+          local.catalogTotal = Number(sub.catalog_total) || Number(local.catalogTotal) || 0;
+          local.backfilledAt = sub.backfilled_at ? new Date(sub.backfilled_at).getTime() : (local.backfilledAt || null);
         }
-        const hasCachedEpisodes = !!local && Object.values(state.episodes).some(ep => ep.showId === local.id);
-        if (!local || !hasCachedEpisodes || !local.description || !local.title || /^Untitled podcast$/i.test(local.title)) {
+        const localShow = local || state.subscriptions.find(x => x.feedUrl === sub.feed_url);
+        const cachedCount = localShow ? episodeCountForShow(localShow.id) : 0;
+        const hasCachedEpisodes = cachedCount > 0;
+        const shouldBackfillCached = !sub.backfilled_at && cachedCount > 0 && cachedCount <= 75;
+        if (!local || !hasCachedEpisodes || !local?.description || !local?.title || /^Untitled podcast$/i.test(local?.title || '') || shouldBackfillCached) {
           try {
-            const feed = await fetchFeed(sub.feed_url);
+            let feed = await fetchFeed(sub.feed_url);
+            const shouldBackfillFeed = !sub.backfilled_at && (feed.episodes || []).length <= 75;
+            if (shouldBackfillCached || shouldBackfillFeed) feed = await applyCatalogBackfill(feed);
             const canonicalUrl = feed.feedUrl || feed.id || sub.feed_url;
-            upsertFeed(feed, canonicalUrl, sub.feed_url);
+            const archived = upsertFeed(feed, canonicalUrl, sub.feed_url);
             await syncSubscriptionToRemote(canonicalUrl, feed);
+            await syncEpisodesToRemote(archived, canonicalUrl);
             if (canonicalUrl !== sub.feed_url) await removeRemoteSubscriptionByUrl(sub.feed_url);
           } catch (e) { console.warn('Feed hydration failed', e); }
         }
@@ -1190,7 +1337,13 @@
       else await syncSettingsToRemote();
 
       saveLocal();
+      queueEpisodeCacheSave();
       render();
+      // One-time/bootstrap upload of any episodes learned before the server-side
+      // archive existed. This runs after the UI is usable.
+      if ((archivedRows?.length || 0) < Object.keys(state.episodes).length) {
+        setTimeout(() => syncEpisodesToRemote(Object.values(state.episodes)), 0);
+      }
     } catch (e) {
       console.warn('Remote hydration failed', e);
       toast('Cloud sync could not be refreshed.');
@@ -1208,15 +1361,83 @@
 
   async function syncSubscriptionToRemote(feedUrl, feed) {
     if (!state.remoteReady) return;
-    const { error } = await state.supabase.from('podstream_subscriptions').upsert({
+    const payload = {
       user_id: state.user.id,
       feed_url: feedUrl,
       title: feed.title || null,
       image_url: feed.image || null,
       description: feed.description || null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,feed_url' });
+    };
+    if (Number(feed.catalogTotal) > 0) payload.catalog_total = Number(feed.catalogTotal);
+    if (feed.backfillAttempted) payload.backfilled_at = new Date().toISOString();
+    const { error } = await state.supabase.from('podstream_subscriptions').upsert(payload, { onConflict: 'user_id,feed_url' });
     if (error) console.warn('Subscription sync failed', error);
+  }
+
+  async function fetchRemoteEpisodeArchive() {
+    if (!state.remoteReady) return [];
+    const rows = [];
+    const pageSize = 1000;
+    for (let start = 0; ; start += pageSize) {
+      const { data, error } = await state.supabase.from('podstream_episode_archive')
+        .select('*')
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .range(start, start + pageSize - 1);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return rows;
+  }
+
+  function mergeRemoteEpisodeArchive(rows) {
+    for (const row of rows || []) {
+      if (!row?.episode_id || !row?.audio_url) continue;
+      const existing = state.episodes[row.episode_id] || {};
+      state.episodes[row.episode_id] = {
+        ...existing,
+        id: row.episode_id,
+        showId: row.show_id || existing.showId,
+        feedUrl: row.feed_url || existing.feedUrl || '',
+        showTitle: row.show_title || existing.showTitle || '',
+        title: row.title || existing.title || 'Untitled episode',
+        audioUrl: row.audio_url,
+        publishedAt: row.published_at || existing.publishedAt || new Date().toISOString(),
+        duration: Number(row.duration_seconds) || Number(existing.duration) || 0,
+        image: row.image_url || existing.image || '',
+        source: row.source || existing.source || 'rss',
+      };
+    }
+  }
+
+  async function syncEpisodesToRemote(episodes, explicitFeedUrl = '') {
+    if (!state.remoteReady || !episodes?.length) return;
+    const rows = [];
+    for (const ep of episodes) {
+      if (!ep?.id || !ep?.audioUrl || !ep?.showId) continue;
+      const sub = state.subscriptions.find(s => s.id === ep.showId);
+      rows.push({
+        user_id: state.user.id,
+        episode_id: ep.id,
+        show_id: ep.showId,
+        feed_url: explicitFeedUrl || ep.feedUrl || sub?.feedUrl || null,
+        show_title: ep.showTitle || sub?.title || null,
+        title: ep.title || null,
+        audio_url: ep.audioUrl,
+        published_at: ep.publishedAt || null,
+        duration_seconds: Math.max(0, Number(ep.duration) || 0),
+        image_url: ep.image || null,
+        source: ep.source || 'rss',
+        updated_at: new Date().toISOString(),
+      });
+    }
+    const chunkSize = 250;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const { error } = await state.supabase.from('podstream_episode_archive')
+        .upsert(rows.slice(i, i + chunkSize), { onConflict: 'user_id,episode_id' });
+      if (error) { console.warn('Episode archive sync failed', error); break; }
+    }
   }
 
   async function syncPlaybackToRemote(id) {
