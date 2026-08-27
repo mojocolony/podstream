@@ -47,7 +47,7 @@
       </nav>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-version">v0.2.3</div>
+        <div class="sidebar-version">v0.2.4</div>
       </div>
     </aside>
     <div class="sidebar-scrim" id="sidebarScrim" aria-hidden="true"></div>
@@ -119,6 +119,24 @@
         <button class="primary-button" id="addFeedSubmit" type="submit" value="default"><span>Add</span></button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="podcastInfoDialog">
+    <div class="dialog-card podcast-info-card">
+      <div class="dialog-head">
+        <div>
+          <h2 id="podcastInfoTitle">Podcast</h2>
+          <p id="podcastInfoMeta"></p>
+        </div>
+        <button class="icon-button" type="button" data-dialog-close aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div id="podcastInfoBody" class="podcast-info-body"></div>
+      <div class="dialog-actions podcast-info-actions">
+        <button class="secondary-button" type="button" id="podcastInfoStarButton"><i data-lucide="star"></i><span>Star</span></button>
+        <button class="secondary-button danger-action" type="button" id="podcastInfoRemoveButton"><i data-lucide="trash-2"></i><span>Remove</span></button>
+        <button class="primary-button" type="button" id="podcastInfoEpisodesButton"><i data-lucide="list-music"></i><span>View episodes</span></button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="settingsDialog">

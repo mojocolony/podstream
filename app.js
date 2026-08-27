@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.2.1';
+  const APP_VERSION = '0.2.4';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -54,7 +54,7 @@
   }
 
   function cacheEls() {
-    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','settingsDialog','settingsButton','settingsSubtitle','syncButton','menuButton','sidebar','sidebarScrim','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
+    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','podcastInfoDialog','podcastInfoTitle','podcastInfoMeta','podcastInfoBody','podcastInfoStarButton','podcastInfoRemoveButton','podcastInfoEpisodesButton','settingsDialog','settingsButton','settingsSubtitle','syncButton','menuButton','sidebar','sidebarScrim','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
   }
 
   function bindEvents() {
@@ -69,7 +69,7 @@
     });
     els.addPodcastForm.addEventListener('submit', handleAddPodcast);
     document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => btn.closest('dialog')?.close()));
-    [els.addPodcastDialog, els.settingsDialog].forEach(dialog => {
+    [els.addPodcastDialog, els.podcastInfoDialog, els.settingsDialog].forEach(dialog => {
       dialog.addEventListener('click', (ev) => {
         if (ev.target === dialog) dialog.close();
       });
@@ -80,6 +80,24 @@
           els.feedChoices.innerHTML = '';
         }
       });
+    });
+    els.podcastInfoEpisodesButton.addEventListener('click', () => {
+      const showId = els.podcastInfoDialog.dataset.showId;
+      if (!showId) return;
+      els.podcastInfoDialog.close();
+      openPodcast(showId);
+    });
+    els.podcastInfoStarButton.addEventListener('click', async () => {
+      const showId = els.podcastInfoDialog.dataset.showId;
+      if (!showId) return;
+      await toggleStarShow(showId);
+      if (els.podcastInfoDialog.open) updatePodcastInfoDialog(showId);
+    });
+    els.podcastInfoRemoveButton.addEventListener('click', async () => {
+      const showId = els.podcastInfoDialog.dataset.showId;
+      if (!showId) return;
+      els.podcastInfoDialog.close();
+      await removeSubscription(showId);
     });
     els.settingsButton.addEventListener('click', openSettings);
     document.querySelectorAll('[data-text-size]').forEach(btn => btn.addEventListener('click', () => setTextSize(btn.dataset.textSize)));
@@ -368,26 +386,52 @@
       if (primary) return primary;
       return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true });
     });
-    els.content.innerHTML = `<div class="subscription-list">${subscriptions.map(s => `<article class="subscription-row" data-open-show="${escAttr(s.id)}" tabindex="0" role="button" aria-label="Open ${escAttr(s.title)} episodes">
-      ${coverMarkup(s.image, s.title)}
-      <div class="subscription-main">
-        <div class="subscription-title">${esc(s.title)}</div>
+    els.content.innerHTML = `<div class="subscription-grid">${subscriptions.map(s => `<article class="podcast-card" data-open-show="${escAttr(s.id)}" tabindex="0" role="button" aria-label="Open ${escAttr(s.title || 'podcast')} episodes">
+      <div class="podcast-card-art">
+        ${coverMarkup(s.image, s.title)}
+        <div class="podcast-card-actions">
+          <button class="icon-button podcast-info-button" data-info-show="${escAttr(s.id)}" aria-label="Podcast information" title="Podcast information"><i data-lucide="info"></i></button>
+          <button class="icon-button star-show ${state.starredShows[s.id] ? 'active':''}" data-star-show="${escAttr(s.id)}" aria-label="Star podcast" title="Star podcast"><i data-lucide="star"></i></button>
+        </div>
+      </div>
+      <div class="podcast-card-main">
+        <div class="subscription-title">${esc(s.title || 'Untitled podcast')}</div>
         ${s.description ? `<div class="subscription-description">${esc(s.description)}</div>` : `<div class="subscription-description muted">No description supplied by this podcast.</div>`}
         <div class="subscription-meta">${s.episodeCount || 0} episodes loaded</div>
       </div>
-      <div class="subscription-actions">
-        <button class="icon-button star-show ${state.starredShows[s.id] ? 'active':''}" data-star-show="${escAttr(s.id)}" aria-label="Star podcast" title="Star podcast"><i data-lucide="star"></i></button>
-        <button class="icon-button remove-show" data-remove-show="${escAttr(s.id)}" aria-label="Remove podcast" title="Remove podcast"><i data-lucide="trash-2"></i></button>
-        <span class="subscription-open-icon" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
-      </div>
+      <span class="subscription-open-icon" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
     </article>`).join('')}</div>`;
     els.content.querySelectorAll('[data-open-show]').forEach(el => {
       const open = () => openPodcast(el.dataset.openShow);
       el.addEventListener('click', open);
-      el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
+      el.addEventListener('keydown', ev => { if (ev.target !== el) return; if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
     });
+    els.content.querySelectorAll('[data-info-show]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); openPodcastInfo(el.dataset.infoShow); }));
     els.content.querySelectorAll('[data-star-show]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); toggleStarShow(el.dataset.starShow); }));
-    els.content.querySelectorAll('[data-remove-show]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); removeSubscription(el.dataset.removeShow); }));
+  }
+
+  function updatePodcastInfoDialog(showId) {
+    const sub = state.subscriptions.find(s => s.id === showId);
+    if (!sub) return;
+    const episodes = Object.values(state.episodes).filter(e => e.showId === showId);
+    els.podcastInfoDialog.dataset.showId = showId;
+    els.podcastInfoTitle.textContent = decodeHtmlText(sub.title || 'Untitled podcast');
+    els.podcastInfoMeta.textContent = `${episodes.length} episode${episodes.length === 1 ? '' : 's'} loaded`;
+    els.podcastInfoBody.innerHTML = `<div class="podcast-info-summary">
+      ${coverMarkup(sub.image, sub.title)}
+      <div class="podcast-info-description">${sub.description ? esc(sub.description) : '<span class="muted">No description supplied by this podcast.</span>'}</div>
+    </div>`;
+    const starred = !!state.starredShows[showId];
+    els.podcastInfoStarButton.classList.toggle('active', starred);
+    els.podcastInfoStarButton.setAttribute('aria-pressed', String(starred));
+    els.podcastInfoStarButton.innerHTML = `<i data-lucide="star"></i><span>${starred ? 'Starred' : 'Star'}</span>`;
+    lucide.createIcons();
+  }
+
+  function openPodcastInfo(showId) {
+    if (!state.subscriptions.some(s => s.id === showId)) return;
+    updatePodcastInfoDialog(showId);
+    els.podcastInfoDialog.showModal();
   }
 
   function openPodcast(showId) {
