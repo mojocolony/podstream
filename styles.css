@@ -163,7 +163,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(124,141,167,
   .topbar { padding:15px 16px; height:78px; }
   .topbar p { display:none; }
   .topbar h1 { font-size:calc(21px + var(--font-bump)); }
-  .primary-button span { display:none; }
+  .topbar .primary-button span { display:none; }
   .topbar-actions { gap:0; }
   .content { padding:14px 16px 34px; }
   .episode { grid-template-columns:48px minmax(0,1fr) auto; gap:10px; }
@@ -485,8 +485,28 @@ dialog::backdrop { background: var(--backdrop); }
   .theme-button svg { width:15px; height:15px; }
 }
 
+
+#syncButton.is-refreshing svg {
+  animation: podstream-spin .8s linear infinite;
+}
+#syncButton[aria-busy="true"] {
+  color: var(--accent);
+}
+@keyframes podstream-spin { to { transform: rotate(360deg); } }
+
+/* iOS/Safari can latch :hover after a tap. Keep touch controls visually neutral
+   unless the app has explicitly placed them in an active/loading state. */
+@media (hover: none), (pointer: coarse) {
+  .icon-button:hover { background: transparent; }
+  .primary-button:hover { background: var(--accent); }
+  .secondary-button:hover, .enhance-button:hover { background: var(--panel-2); }
+  .nav-item:hover, .text-button:hover { background: transparent; }
+  .nav-item.active:hover { background: var(--accent-soft); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .sidebar-scrim { transition:none; }
+  #syncButton.is-refreshing svg { animation-duration:1.6s; }
 }
 
 .empty { background: var(--panel); }

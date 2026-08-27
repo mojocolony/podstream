@@ -101,7 +101,7 @@ async function safeFetchText(input: string, accept: string) {
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "Podstream/0.1.19 (+personal podcast reader)",
+          "user-agent": "Podstream/0.2.1 (+personal podcast reader)",
           accept,
         },
       });
@@ -272,7 +272,7 @@ async function discoverViaPodcastDirectory(html: string, pageUrl: string) {
     try {
       response = await fetch(endpoint.toString(), {
         signal: controller.signal,
-        headers: { "user-agent": "Podstream/0.1.19 (+personal podcast reader)", "accept": "application/json" },
+        headers: { "user-agent": "Podstream/0.2.1 (+personal podcast reader)", "accept": "application/json" },
       });
     } finally {
       clearTimeout(timeout);
@@ -352,7 +352,11 @@ function text(block: string, tags: string[]) {
   for (const tag of tags) {
     const safe = tag.replace(":", "\\:");
     const match = block.match(new RegExp(`<${safe}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${safe}>`, "i"));
-    if (match) return stripTags(match[1]);
+    if (!match) continue;
+    const cleaned = stripTags(match[1]);
+    // Some podcast hosts emit an empty RSS <title> but populate a namespaced
+    // title such as <itunes:title>. Keep looking instead of accepting blank.
+    if (cleaned) return cleaned;
   }
   return "";
 }
@@ -380,14 +384,14 @@ function parseFeed(xml: string, feedUrl: string) {
 
 function parseRssFeed(xml: string, feedUrl: string) {
   const channel = xml.match(/<channel\b[\s\S]*?<\/channel>/i)?.[0] || xml;
-  const title = text(channel, ["title"]);
+  const title = text(channel, ["title", "itunes:title", "media:title"]);
   const description = text(channel, ["itunes:summary", "description", "subtitle"]);
   const image = attr(channel, "itunes:image", "href") || text(channel, ["url"]) || attr(channel, "media:thumbnail", "url");
   const items = [...channel.matchAll(/<item\b[\s\S]*?<\/item>/gi)].map((match) => match[0]);
   const episodes = items.map((item) => {
     const enclosure = attr(item, "enclosure", "url") || attr(item, "media:content", "url");
     const guid = text(item, ["guid"]);
-    const episodeTitle = text(item, ["title"]);
+    const episodeTitle = text(item, ["title", "itunes:title", "media:title"]);
     return {
       id: guid || `${feedUrl}|${enclosure}|${episodeTitle}`,
       title: episodeTitle,

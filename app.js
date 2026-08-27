@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.2.0';
+  const APP_VERSION = '0.2.1';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
@@ -573,18 +573,45 @@
   async function refreshAllFeeds() {
     if (!state.remoteReady) { openSettings(); els.authStatus.textContent = 'Sign in before refreshing feeds.'; return; }
     if (!state.subscriptions.length) return toast('No subscriptions yet');
+
+    const total = state.subscriptions.length;
+    let updated = 0;
+    let failed = 0;
     els.syncButton.disabled = true;
+    els.syncButton.classList.add('is-refreshing');
+    els.syncButton.setAttribute('aria-busy', 'true');
+    els.syncButton.setAttribute('aria-label', 'Refreshing feeds');
+    els.syncButton.title = 'Refreshing feeds';
+    toast(`Refreshing ${total} podcast${total === 1 ? '' : 's'}…`);
+
     try {
       for (const s of state.subscriptions) {
         try {
           const feed = await fetchFeed(s.feedUrl);
           upsertFeed(feed, s.feedUrl);
           await syncSubscriptionToRemote(s.feedUrl, feed);
-        } catch (e) { console.warn('Feed refresh failed', s.feedUrl, e); }
+          updated += 1;
+        } catch (e) {
+          failed += 1;
+          console.warn('Feed refresh failed', s.feedUrl, e);
+        }
       }
       render();
-      toast('Feeds refreshed');
-    } finally { els.syncButton.disabled = false; }
+      if (failed === 0) {
+        toast(`${updated} podcast${updated === 1 ? '' : 's'} refreshed`);
+      } else if (updated === 0) {
+        toast(`Refresh failed for ${failed} podcast${failed === 1 ? '' : 's'}`);
+      } else {
+        toast(`${updated} refreshed · ${failed} failed`);
+      }
+    } finally {
+      els.syncButton.disabled = false;
+      els.syncButton.classList.remove('is-refreshing');
+      els.syncButton.removeAttribute('aria-busy');
+      els.syncButton.setAttribute('aria-label', 'Refresh feeds');
+      els.syncButton.title = 'Refresh feeds';
+      els.syncButton.blur();
+    }
   }
 
   async function playEpisode(id) {
@@ -969,7 +996,7 @@
           local.image = sub.image_url || local.image;
           local.description = sub.description || local.description || '';
         }
-        if (!local || !local.description) {
+        if (!local || !local.description || !local.title || /^Untitled podcast$/i.test(local.title)) {
           try {
             const feed = await fetchFeed(sub.feed_url);
             upsertFeed(feed, sub.feed_url);
