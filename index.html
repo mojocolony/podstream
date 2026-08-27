@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#e6ecf2" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Podstream" />
   <title>Podstream</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png" />
@@ -11,6 +15,20 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script>
+    (() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('podstream-settings-v1') || '{}');
+        const theme = ['system','light','dark'].includes(saved.theme) ? saved.theme : 'system';
+        const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#151c23' : '#e6ecf2');
+      } catch (_) {
+        document.documentElement.dataset.theme = 'system';
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -29,13 +47,14 @@
       </nav>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-version">v0.1.19</div>
+        <div class="sidebar-version">v0.2.0</div>
       </div>
     </aside>
+    <div class="sidebar-scrim" id="sidebarScrim" aria-hidden="true"></div>
 
     <main class="main">
       <header class="topbar">
-        <button class="icon-button mobile-only" id="menuButton" aria-label="Open menu"><i data-lucide="menu"></i></button>
+        <button class="icon-button mobile-only" id="menuButton" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"><i data-lucide="menu"></i></button>
         <div>
           <h1 id="viewTitle">Stream</h1>
           <p id="viewSubtitle">Newest episodes from your subscriptions.</p>
@@ -107,20 +126,30 @@
       <div class="dialog-head">
         <div>
           <h2>Settings</h2>
-          <p>Sign in for cross-device sync.</p>
+          <p id="settingsSubtitle">Sign in for cross-device sync.</p>
         </div>
         <button class="icon-button" type="button" data-dialog-close aria-label="Close"><i data-lucide="x"></i></button>
       </div>
-      <div class="settings-section">
-        <div class="settings-label">Text size</div>
-        <div class="text-size-control" role="group" aria-label="Text size">
-          <button class="size-button" type="button" data-text-size="small" aria-label="Smaller text">A−</button>
-          <button class="size-button" type="button" data-text-size="medium" aria-label="Default text size">A</button>
-          <button class="size-button" type="button" data-text-size="large" aria-label="Larger text">A+</button>
+      <div class="settings-grid">
+        <div class="settings-section">
+          <div class="settings-label">Text size</div>
+          <div class="text-size-control" role="group" aria-label="Text size">
+            <button class="size-button" type="button" data-text-size="small" aria-label="Smaller text">A−</button>
+            <button class="size-button" type="button" data-text-size="medium" aria-label="Default text size">A</button>
+            <button class="size-button" type="button" data-text-size="large" aria-label="Larger text">A+</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-label">Appearance</div>
+          <div class="theme-control" role="group" aria-label="Appearance">
+            <button class="theme-button" type="button" data-theme-choice="system"><i data-lucide="monitor"></i><span>System</span></button>
+            <button class="theme-button" type="button" data-theme-choice="light"><i data-lucide="sun"></i><span>Light</span></button>
+            <button class="theme-button" type="button" data-theme-choice="dark"><i data-lucide="moon"></i><span>Dark</span></button>
+          </div>
         </div>
       </div>
-      <label>Email<input id="emailInput" type="email" placeholder="you@example.com" /></label>
-      <div class="settings-note">Podstream uses your private synced account for subscriptions, stars, playback position and voice-enhancement preference. Podcast audio itself is streamed directly from the publisher.</div>
+      <label>Email<input id="emailInput" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" /></label>
+      <div class="settings-note">Subscriptions, stars, playback position and Enhance Voices sync privately. Podcast audio streams directly from each publisher.</div>
       <div class="dialog-actions split">
         <button class="secondary-button" type="button" id="signOutButton">Sign out</button>
         <div class="right-actions">

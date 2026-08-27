@@ -1,4 +1,4 @@
-# Podstream v0.1.19
+# Podstream v0.2.0
 
 A deliberately small podcast web app.
 
@@ -46,6 +46,16 @@ The toggle uses browser Web Audio processing:
 Processing occurs locally while audio streams. Some podcast hosts do not permit the browser CORS access needed for Web Audio processing; on those streams normal playback continues, but Enhance Voices is unavailable.
 
 
+## v0.2.0
+
+- Isolated Podstream's Supabase auth session from the other apps that share the same Supabase project and GitHub Pages origin. A Podstream sign-in is now required once per device/browser.
+- Added Appearance controls: System, Light, and Dark. System follows the device appearance automatically.
+- Added a complete mobile layout pass: larger touch targets, two-line episode titles, cleaner metadata wrapping, narrower action column, improved podcast list rows, safe-area-aware header/player spacing, and a menu backdrop that closes on tap.
+- Reworked mobile Settings so large text does not crush or wrap the action buttons.
+- Inputs use iOS-safe sizing to avoid focus zoom, and dialogs are height-limited/scrollable on small screens.
+- The bottom player is now more spacious on phones and only reserves page space when an episode is actually loaded.
+
+
 ## v0.1.2
 - Sidebar simplified to Stream, Podcasts, Starred, and History.
 - History groups unfinished episodes under In Progress and other listening under Recently Played.
@@ -85,13 +95,7 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Shortcuts do not intercept typing, focused controls, or open dialogs.
 
 
-
 ## v0.1.19
-
-- Fixes numeric and double-encoded HTML entities in podcast and episode titles (for example `&#039;`).
-- Adds defensive client-side entity decoding so previously saved History/Starred titles also display correctly.
-
-## v0.1.18
 
 - Podcast descriptions now wrap to their full length on desktop instead of being truncated after three lines.
 - On screens 850px wide or narrower, descriptions remain clamped to four lines to keep the list compact.

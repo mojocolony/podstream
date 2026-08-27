@@ -1,10 +1,18 @@
 (() => {
-  const APP_VERSION = '0.1.19';
+  const APP_VERSION = '0.2.0';
   const LS_KEY = 'podstream-state-v1';
   const SETTINGS_KEY = 'podstream-settings-v1';
   const SUPABASE_URL = 'https://appesztafatypbxzdunr.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_70RugEcKQxZWUa5eQfmyeg_y7AkVz9V';
   const FEED_FUNCTION = 'podstream-fetch-feed';
+  const AUTH_STORAGE_PREFIX = 'podstream-auth-v1:';
+  const DARK_QUERY = window.matchMedia('(prefers-color-scheme: dark)');
+  const podstreamAuthStorage = {
+    getItem: (key) => localStorage.getItem(AUTH_STORAGE_PREFIX + key),
+    setItem: (key, value) => localStorage.setItem(AUTH_STORAGE_PREFIX + key, value),
+    removeItem: (key) => localStorage.removeItem(AUTH_STORAGE_PREFIX + key),
+  };
+
   const state = {
     view: 'stream',
     selectedPodcastId: null,
@@ -16,6 +24,7 @@
     currentEpisodeId: null,
     enhanceVoices: false,
     textSize: 'medium',
+    theme: 'system',
     user: null,
     supabase: null,
     remoteReady: false,
@@ -36,6 +45,7 @@
     cacheEls();
     loadLocal();
     applyTextSize();
+    applyTheme();
     bindEvents();
     render();
     lucide.createIcons();
@@ -44,7 +54,7 @@
   }
 
   function cacheEls() {
-    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','settingsDialog','settingsButton','syncButton','menuButton','sidebar','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
+    ['content','viewTitle','viewSubtitle','addPodcastButton','addPodcastDialog','addPodcastForm','feedUrlInput','feedError','feedChoices','settingsDialog','settingsButton','settingsSubtitle','syncButton','menuButton','sidebar','sidebarScrim','audio','player','playerTitle','playerShow','playerArtButton','playPause','back15','forward15','seek','currentTime','duration','enhanceButton','starEpisodeButton','emailInput','saveSettingsButton','signOutButton','authStatus','toast'].forEach(id => els[id] = document.getElementById(id));
   }
 
   function bindEvents() {
@@ -78,10 +88,15 @@
     });
     els.settingsButton.addEventListener('click', openSettings);
     document.querySelectorAll('[data-text-size]').forEach(btn => btn.addEventListener('click', () => setTextSize(btn.dataset.textSize)));
+    document.querySelectorAll('[data-theme-choice]').forEach(btn => btn.addEventListener('click', () => setTheme(btn.dataset.themeChoice)));
+    DARK_QUERY.addEventListener?.('change', () => { if (state.theme === 'system') applyTheme(); });
     els.saveSettingsButton.addEventListener('click', saveSettingsAndSignIn);
     els.signOutButton.addEventListener('click', signOut);
     els.syncButton.addEventListener('click', refreshAllFeeds);
-    els.menuButton.addEventListener('click', () => els.sidebar.classList.toggle('open'));
+    els.menuButton.addEventListener('click', toggleMenu);
+    els.sidebarScrim.addEventListener('click', closeMenu);
+    window.addEventListener('resize', () => { if (window.innerWidth > 850) closeMenu(); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && els.sidebar.classList.contains('open')) closeMenu(); });
     els.playPause.addEventListener('click', togglePlay);
     els.back15.addEventListener('click', () => jumpPlayback(-15));
     els.forward15.addEventListener('click', () => jumpPlayback(15));
@@ -192,6 +207,7 @@
     try {
       const settings = getSettings();
       state.textSize = ['small','medium','large'].includes(settings.textSize) ? settings.textSize : 'medium';
+      state.theme = ['system','light','dark'].includes(settings.theme) ? settings.theme : 'system';
       const raw = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
       Object.assign(state, {
         subscriptions: raw.subscriptions || [],
@@ -215,11 +231,30 @@
     }));
   }
 
+  function openMenu() {
+    els.sidebar.classList.add('open');
+    els.sidebarScrim.classList.add('open');
+    document.body.classList.add('menu-open');
+    els.menuButton.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeMenu() {
+    els.sidebar.classList.remove('open');
+    els.sidebarScrim.classList.remove('open');
+    document.body.classList.remove('menu-open');
+    els.menuButton.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleMenu() {
+    if (els.sidebar.classList.contains('open')) closeMenu();
+    else openMenu();
+  }
+
   function setView(view) {
     state.view = view;
     state.selectedPodcastId = null;
     document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-    els.sidebar.classList.remove('open');
+    closeMenu();
     render();
   }
 
@@ -312,7 +347,7 @@
       ${coverMarkup(e.image, e.showTitle)}
       <div class="episode-main" data-play="${escAttr(e.id)}">
         <div class="episode-title">${esc(e.title)}</div>
-        <div class="episode-sub"><span class="show">${esc(e.showTitle)}</span><span>•</span><span>${friendlyDate(e.publishedAt)}</span>${e.duration ? `<span>•</span><span>${formatTime(e.duration)}</span>`:''}</div>
+        <div class="episode-sub"><span class="show">${esc(e.showTitle)}</span><span class="episode-sep">•</span><span class="episode-date">${friendlyDate(e.publishedAt)}</span>${e.duration ? `<span class="episode-sep">•</span><span class="episode-duration">${formatTime(e.duration)}</span>`:''}</div>
         ${pct > 1 ? `<div class="progress-line"><span style="width:${pct}%"></span></div>` : ''}
       </div>
       <div class="episode-actions">
@@ -595,8 +630,9 @@
 
   function renderPlayer() {
     const ep = state.episodes[state.currentEpisodeId];
-    if (!ep) { els.player.classList.add('hidden'); return; }
+    if (!ep) { els.player.classList.add('hidden'); document.body.classList.remove('player-visible'); return; }
     els.player.classList.remove('hidden');
+    document.body.classList.add('player-visible');
     els.playerTitle.textContent = decodeHtmlText(ep.title);
     els.playerShow.textContent = decodeHtmlText(ep.showTitle);
     els.playerArtButton.innerHTML = ep.image ? `<img src="${escAttr(ep.image)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
@@ -811,12 +847,52 @@
     });
   }
 
+  function effectiveTheme() {
+    if (state.theme === 'dark') return 'dark';
+    if (state.theme === 'light') return 'light';
+    return DARK_QUERY.matches ? 'dark' : 'light';
+  }
+
+  function applyTheme() {
+    document.documentElement.dataset.theme = state.theme || 'system';
+    document.documentElement.style.colorScheme = effectiveTheme();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', effectiveTheme() === 'dark' ? '#151c23' : '#e6ecf2');
+    updateThemeButtons();
+  }
+
+  function setTheme(theme) {
+    if (!['system','light','dark'].includes(theme)) return;
+    state.theme = theme;
+    const settings = getSettings();
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, theme }));
+    applyTheme();
+  }
+
+  function updateThemeButtons() {
+    document.querySelectorAll('[data-theme-choice]').forEach(btn => {
+      const active = btn.dataset.themeChoice === state.theme;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+  }
+
   function openSettings() {
     const s = getSettings();
     els.emailInput.value = state.user?.email || s.email || '';
-    els.authStatus.textContent = state.user ? `Signed in as ${state.user.email}` : 'Not signed in.';
     updateTextSizeButtons();
+    updateThemeButtons();
+    updateAuthControls();
     els.settingsDialog.showModal();
+  }
+
+  function updateAuthControls() {
+    const signedIn = !!state.user;
+    els.emailInput.disabled = signedIn;
+    els.saveSettingsButton.classList.toggle('hidden', signedIn);
+    els.signOutButton.classList.toggle('hidden', !signedIn);
+    els.settingsSubtitle.textContent = signedIn ? 'Your Podstream sync account.' : 'Sign in for cross-device sync.';
+    els.authStatus.textContent = signedIn ? `Signed in as ${state.user.email}` : 'Not signed in.';
   }
 
   function getSettings() {
@@ -845,7 +921,7 @@
     if (!window.supabase?.createClient) return;
     try {
       state.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: podstreamAuthStorage },
       });
       const { data, error } = await state.supabase.auth.getSession();
       if (error) throw error;
@@ -854,6 +930,7 @@
       state.supabase.auth.onAuthStateChange((_event, session) => {
         state.user = session?.user || null;
         state.remoteReady = !!state.user;
+        if (els.settingsDialog?.open) updateAuthControls();
         if (state.remoteReady) setTimeout(() => hydrateRemote(), 0);
       });
     } catch (e) { console.warn('Supabase initialization failed', e); }
@@ -862,7 +939,9 @@
   async function signOut() {
     if (state.supabase) await state.supabase.auth.signOut();
     state.user = null; state.remoteReady = false;
+    updateAuthControls();
     els.authStatus.textContent = 'Signed out.';
+    render();
   }
 
   async function hydrateRemote() {
