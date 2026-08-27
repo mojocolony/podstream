@@ -1,4 +1,4 @@
-# Podstream v0.2.7
+# Podstream v0.2.8
 
 A deliberately small podcast web app.
 
@@ -47,6 +47,14 @@ The toggle uses browser Web Audio processing:
 Processing occurs locally while audio streams. Some podcast hosts do not permit the browser CORS access needed for Web Audio processing; on those streams normal playback continues, but Enhance Voices is unavailable.
 
 
+
+
+## v0.2.8
+
+- Adds a TWiT-specific historical archive bridge for feeds that intentionally expose only the newest 10 RSS episodes.
+- Historical TWiT episode metadata is imported from the public TWiT episode archive.
+- Older TWiT audio URLs are resolved lazily only when an episode is played, avoiding hundreds of unnecessary page requests during Refresh.
+- Keeps current RSS authoritative for new TWiT episodes while retaining the web archive for history.
 
 ## v0.2.7
 

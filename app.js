@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.2.7';
+  const APP_VERSION = '0.2.8';
   const LS_KEY = 'podstream-state-v2';
   const LEGACY_LS_KEY = 'podstream-state-v1';
   const CACHE_DB = 'podstream-cache-v1';
@@ -9,6 +9,8 @@
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_70RugEcKQxZWUa5eQfmyeg_y7AkVz9V';
   const FEED_FUNCTION = 'podstream-fetch-feed';
   const CATALOG_FUNCTION = 'podstream-catalog-backfill';
+  const TWIT_CATALOG_FUNCTION = 'podstream-twit-backfill';
+  const TWIT_RESOLVE_FUNCTION = 'podstream-resolve-twit-episode';
   const AUTH_STORAGE_PREFIX = 'podstream-auth-v1:';
   const DARK_QUERY = window.matchMedia('(prefers-color-scheme: dark)');
   const podstreamAuthStorage = {
@@ -717,6 +719,22 @@
 
   async function fetchCatalogBackfill(feed) {
     if (!state.supabase || !state.remoteReady || !feed?.feedUrl) return null;
+
+    // TWiT deliberately limits most public RSS feeds to the newest 10 episodes.
+    // Its public website carries the long-term archive, so use that source before
+    // the general-purpose podcast index for feeds.twit.tv subscriptions.
+    try {
+      const host = new URL(feed.feedUrl).hostname.toLowerCase();
+      if (host === 'feeds.twit.tv' || host.endsWith('.twit.tv')) {
+        const { data, error } = await state.supabase.functions.invoke(TWIT_CATALOG_FUNCTION, {
+          body: { feedUrl: feed.feedUrl, title: feed.title || '' },
+        });
+        if (!error && !data?.error && (data?.episodes || []).length) return data;
+        if (error) console.warn('TWiT archive backfill failed', error);
+        else if (data?.error) console.warn('TWiT archive unavailable', data.error);
+      }
+    } catch { /* Not a TWiT feed; continue to the normal catalogue. */ }
+
     const { data, error } = await state.supabase.functions.invoke(CATALOG_FUNCTION, {
       body: { feedUrl: feed.feedUrl, title: feed.title || '' },
     });
@@ -744,7 +762,7 @@
       if (!ep?.audioUrl) continue;
       const guid = String(ep.guid || ep.id || '');
       if ((guid && existingGuids.has(guid)) || existingAudio.has(ep.audioUrl)) continue;
-      (feed.episodes ||= []).push({ ...ep, source: 'apple-directory' });
+      (feed.episodes ||= []).push({ ...ep, source: ep.source || catalog.source || 'catalog' });
       if (guid) existingGuids.add(guid);
       existingAudio.add(ep.audioUrl);
       added += 1;
@@ -868,6 +886,25 @@
   async function playEpisode(id) {
     const ep = state.episodes[id];
     if (!ep?.audioUrl) return;
+
+    if (ep.audioUrl.startsWith('twit-page:')) {
+      const pageUrl = ep.audioUrl.slice('twit-page:'.length);
+      toast('Loading archived TWiT episode…');
+      const { data, error } = await state.supabase.functions.invoke(TWIT_RESOLVE_FUNCTION, {
+        body: { pageUrl },
+      });
+      if (error || data?.error || !data?.audioUrl) {
+        console.warn('TWiT episode audio resolution failed', error || data?.error);
+        toast(data?.error || error?.message || 'Could not load this archived TWiT episode.');
+        return;
+      }
+      ep.audioUrl = data.audioUrl;
+      if (data.title) ep.title = data.title;
+      saveLocal();
+      queueEpisodeCacheSave();
+      await syncEpisodesToRemote([ep], ep.feedUrl || '');
+      render();
+    }
 
     if (state.currentEpisodeId !== id) {
       persistPlayback(false);
