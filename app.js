@@ -60,11 +60,6 @@
   function bindEvents() {
     document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
     els.addPodcastButton.addEventListener('click', () => {
-      if (!state.remoteReady) {
-        openSettings();
-        els.authStatus.textContent = 'Sign in before adding a podcast.';
-        return;
-      }
       els.feedError.classList.add('hidden');
       els.feedChoices.classList.add('hidden');
       els.feedChoices.innerHTML = '';

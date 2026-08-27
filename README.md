@@ -1,4 +1,4 @@
-# Podstream v0.2.2
+# Podstream v0.2.3
 
 A deliberately small podcast web app.
 
@@ -46,7 +46,7 @@ The toggle uses browser Web Audio processing:
 Processing occurs locally while audio streams. Some podcast hosts do not permit the browser CORS access needed for Web Audio processing; on those streams normal playback continues, but Enhance Voices is unavailable.
 
 
-## v0.2.2
+## v0.2.3
 
 - Isolated Podstream's Supabase auth session from the other apps that share the same Supabase project and GitHub Pages origin. A Podstream sign-in is now required once per device/browser.
 - Added Appearance controls: System, Light, and Dark. System follows the device appearance automatically.
@@ -125,7 +125,7 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 - Added Back to Podcasts navigation.
 - Podcast episode lists are sorted newest first and retain the normal play/star controls.
 
-## v0.2.2 fixes
+## v0.2.3 fixes
 
 - Restores the visible **Add** label in the Add Podcast dialog on iPhone.
 - Adds RSS title fallbacks for feeds that leave the standard `<title>` empty but provide `itunes:title` or `media:title` (including Fly on the Wall), and automatically re-fetches subscriptions currently stored as “Untitled podcast”.
