@@ -110,6 +110,11 @@ h1 { font-size:calc(25px + var(--font-bump)); margin:0; letter-spacing:-.03em; }
 .podcast-info-summary .cover { width:124px; height:124px; border-radius:18px; }
 .podcast-info-description { color:var(--muted); font-size:calc(13px + var(--font-bump)); line-height:1.58; max-height:min(46vh,360px); overflow:auto; padding-right:4px; }
 .podcast-info-actions { align-items:center; }
+.podcast-artwork-option { margin-top:16px; padding:13px 14px; border:1px solid var(--line); border-radius:14px; background:var(--panel); display:flex; gap:11px; align-items:flex-start; cursor:pointer; }
+.podcast-artwork-option input { width:18px; height:18px; margin:2px 0 0; accent-color:var(--accent); flex:0 0 auto; }
+.podcast-artwork-option span { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.podcast-artwork-option strong { font-size:calc(13px + var(--font-bump)); line-height:1.25; }
+.podcast-artwork-option small { color:var(--muted); font-size:calc(11px + var(--font-bump)); line-height:1.4; }
 #podcastInfoStarButton.active { background:var(--accent-soft); color:var(--ink); }
 .danger-action { color:var(--danger); }
 .danger-action:hover { background:var(--danger-wash); }

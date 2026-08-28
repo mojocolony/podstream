@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.2.8';
+  const APP_VERSION = '0.2.9';
   const LS_KEY = 'podstream-state-v2';
   const LEGACY_LS_KEY = 'podstream-state-v1';
   const CACHE_DB = 'podstream-cache-v1';
@@ -12,6 +12,7 @@
   const TWIT_CATALOG_FUNCTION = 'podstream-twit-backfill';
   const TWIT_RESOLVE_FUNCTION = 'podstream-resolve-twit-episode';
   const AUTH_STORAGE_PREFIX = 'podstream-auth-v1:';
+  const THE_DAILY_SHOW_ART = 'assets/the-daily-show-art.jpg';
   const DARK_QUERY = window.matchMedia('(prefers-color-scheme: dark)');
   const podstreamAuthStorage = {
     getItem: (key) => localStorage.getItem(AUTH_STORAGE_PREFIX + key),
@@ -471,11 +472,40 @@
     els.content.querySelectorAll('[data-star-episode]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); toggleStarEpisode(el.dataset.starEpisode); }));
   }
 
+  function isTheDailySubscription(sub) {
+    return !!sub && decodeHtmlText(sub.title || '').trim().toLowerCase() === 'the daily';
+  }
+
+  function showArtworkEnabled(sub) {
+    if (!sub) return false;
+    return typeof sub.useShowArtwork === 'boolean' ? sub.useShowArtwork : isTheDailySubscription(sub);
+  }
+
+  function episodeArtwork(ep) {
+    if (!ep) return '';
+    const sub = state.subscriptions.find(s => s.id === ep.showId);
+    if (showArtworkEnabled(sub)) return sub?.artworkOverrideUrl || (isTheDailySubscription(sub) ? THE_DAILY_SHOW_ART : '') || sub?.image || ep.image || '';
+    return ep.image || sub?.image || '';
+  }
+
+  async function setShowArtworkPreference(showId, enabled) {
+    const sub = state.subscriptions.find(s => s.id === showId);
+    if (!sub) return;
+    sub.useShowArtwork = !!enabled;
+    if (sub.useShowArtwork && !sub.artworkOverrideUrl && isTheDailySubscription(sub)) {
+      sub.artworkOverrideUrl = THE_DAILY_SHOW_ART;
+    }
+    saveLocal();
+    render();
+    if (els.podcastInfoDialog.open && els.podcastInfoDialog.dataset.showId === showId) updatePodcastInfoDialog(showId);
+    await syncSubscriptionToRemote(sub.feedUrl, sub);
+  }
+
   function episodeMarkup(e) {
     const pb = state.playback[e.id];
     const pct = pb?.duration ? Math.min(100, pb.position / pb.duration * 100) : 0;
     return `<article class="episode">
-      ${coverMarkup(e.image, e.showTitle)}
+      ${coverMarkup(episodeArtwork(e), e.showTitle)}
       <div class="episode-main" data-play="${escAttr(e.id)}">
         <div class="episode-title">${esc(e.title)}</div>
         <div class="episode-sub"><span class="show">${esc(e.showTitle)}</span><span class="episode-sep">•</span><span class="episode-date">${friendlyDate(e.publishedAt)}</span>${e.duration ? `<span class="episode-sep">•</span><span class="episode-duration">${formatTime(e.duration)}</span>`:''}</div>
@@ -538,7 +568,14 @@
     els.podcastInfoBody.innerHTML = `<div class="podcast-info-summary">
       ${coverMarkup(sub.image, sub.title)}
       <div class="podcast-info-description">${sub.description ? esc(sub.description) : '<span class="muted">No description supplied by this podcast.</span>'}</div>
-    </div>`;
+    </div>
+    <label class="podcast-artwork-option">
+      <input type="checkbox" id="podcastShowArtworkToggle" ${showArtworkEnabled(sub) ? 'checked' : ''}>
+      <span><strong>Use podcast artwork for episodes</strong><small>Show the podcast cover instead of episode-specific artwork in Stream, History and Now Playing.</small></span>
+    </label>`;
+    document.getElementById('podcastShowArtworkToggle')?.addEventListener('change', (event) => {
+      setShowArtworkPreference(showId, event.currentTarget.checked);
+    });
     const starred = !!state.starredShows[showId];
     els.podcastInfoStarButton.classList.toggle('active', starred);
     els.podcastInfoStarButton.setAttribute('aria-pressed', String(starred));
@@ -785,6 +822,10 @@
       episodeCount: previous?.episodeCount || 0,
       catalogTotal: Number(feed.catalogTotal) || Number(previous?.catalogTotal) || 0,
       backfilledAt: feed.backfillAttempted ? Date.now() : (previous?.backfilledAt || null),
+      useShowArtwork: typeof feed.useShowArtwork === 'boolean'
+        ? feed.useShowArtwork
+        : (typeof previous?.useShowArtwork === 'boolean' ? previous.useShowArtwork : isTheDailySubscription({ title: feed.title || previous?.title })),
+      artworkOverrideUrl: feed.artworkOverrideUrl || previous?.artworkOverrideUrl || (isTheDailySubscription({ title: feed.title || previous?.title }) ? THE_DAILY_SHOW_ART : ''),
       updatedAt: Date.now(),
     };
 
@@ -955,7 +996,8 @@
     document.body.classList.add('player-visible');
     els.playerTitle.textContent = decodeHtmlText(ep.title);
     els.playerShow.textContent = decodeHtmlText(ep.showTitle);
-    els.playerArtButton.innerHTML = ep.image ? `<img src="${escAttr(ep.image)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
+    const playerArtwork = episodeArtwork(ep);
+    els.playerArtButton.innerHTML = playerArtwork ? `<img src="${escAttr(playerArtwork)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
     els.enhanceButton.setAttribute('aria-pressed', String(state.enhanceVoices));
     els.starEpisodeButton.classList.toggle('active', !!state.starredEpisodes[ep.id]);
     els.starEpisodeButton.innerHTML = `<i data-lucide="star"></i>`;
@@ -974,7 +1016,8 @@
   function renderNowPlaying() {
     const ep = state.episodes[state.currentEpisodeId];
     if (!ep) return;
-    els.nowPlayingArt.innerHTML = ep.image ? `<img src="${escAttr(ep.image)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
+    const nowPlayingArtwork = episodeArtwork(ep);
+    els.nowPlayingArt.innerHTML = nowPlayingArtwork ? `<img src="${escAttr(nowPlayingArtwork)}" alt="">` : `<div class="art-placeholder"><i data-lucide="radio"></i></div>`;
     els.nowPlayingTitle.textContent = decodeHtmlText(ep.title);
     els.nowPlayingShow.textContent = decodeHtmlText(ep.showTitle);
     els.nowPlayingEnhanceButton.setAttribute('aria-pressed', String(state.enhanceVoices));
@@ -1337,6 +1380,8 @@
           local.description = sub.description || local.description || '';
           local.catalogTotal = Number(sub.catalog_total) || Number(local.catalogTotal) || 0;
           local.backfilledAt = sub.backfilled_at ? new Date(sub.backfilled_at).getTime() : (local.backfilledAt || null);
+          local.useShowArtwork = !!sub.use_show_artwork;
+          local.artworkOverrideUrl = sub.artwork_override_url || local.artworkOverrideUrl || '';
         }
         const localShow = local || state.subscriptions.find(x => x.feedUrl === sub.feed_url);
         const cachedCount = localShow ? episodeCountForShow(localShow.id) : 0;
@@ -1349,6 +1394,8 @@
             const feedCount = (feed.episodes || []).length;
             const shouldBackfillFeed = feedCount <= 75 && (!sub.backfilled_at || catalogTotal > feedCount);
             if (shouldBackfillCached || shouldBackfillFeed) feed = await applyCatalogBackfill(feed);
+            feed.useShowArtwork = !!sub.use_show_artwork;
+            feed.artworkOverrideUrl = sub.artwork_override_url || '';
             const canonicalUrl = feed.feedUrl || feed.id || sub.feed_url;
             const archived = upsertFeed(feed, canonicalUrl, sub.feed_url);
             await syncSubscriptionToRemote(canonicalUrl, feed);
@@ -1405,12 +1452,15 @@
 
   async function syncSubscriptionToRemote(feedUrl, feed) {
     if (!state.remoteReady) return;
+    const localSub = state.subscriptions.find(s => s.feedUrl === feedUrl || s.id === feed.id) || feed;
     const payload = {
       user_id: state.user.id,
       feed_url: feedUrl,
-      title: feed.title || null,
-      image_url: feed.image || null,
-      description: feed.description || null,
+      title: feed.title || localSub?.title || null,
+      image_url: feed.image || localSub?.image || null,
+      description: feed.description || localSub?.description || null,
+      use_show_artwork: !!localSub?.useShowArtwork,
+      artwork_override_url: localSub?.artworkOverrideUrl || null,
       updated_at: new Date().toISOString(),
     };
     if (Number(feed.catalogTotal) > 0) payload.catalog_total = Number(feed.catalogTotal);

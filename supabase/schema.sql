@@ -135,3 +135,9 @@ create index if not exists podstream_episode_archive_user_published_idx
 
 alter table public.podstream_subscriptions add column if not exists catalog_total integer;
 alter table public.podstream_subscriptions add column if not exists backfilled_at timestamptz;
+
+
+-- v0.2.9: optional per-podcast artwork override for episode lists/player.
+alter table public.podstream_subscriptions
+  add column if not exists use_show_artwork boolean not null default false,
+  add column if not exists artwork_override_url text;

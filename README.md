@@ -1,4 +1,4 @@
-# Podstream v0.2.8
+# Podstream v0.2.9
 
 A deliberately small podcast web app.
 
@@ -48,6 +48,13 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 
 
 
+
+## v0.2.9
+
+- Adds a synced per-podcast **Use podcast artwork for episodes** preference in the podcast Info popup.
+- When enabled, Stream, Starred, History, podcast episode lists, the compact player, and Now Playing use the show cover instead of changing episode artwork.
+- The Daily is enabled by default and uses the bundled stable blue show artwork (`assets/the-daily-show-art.jpg`).
+- The preference syncs across devices through `podstream_subscriptions`.
 
 ## v0.2.8
 
