@@ -29,7 +29,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=0.2.9" />
+  <link rel="stylesheet" href="styles.css?v=0.2.10" />
 </head>
 <body>
   <div class="app-shell">
@@ -47,7 +47,7 @@
       </nav>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-version">v0.2.9</div>
+        <div class="sidebar-version">v0.2.10</div>
       </div>
     </aside>
     <div class="sidebar-scrim" id="sidebarScrim" aria-hidden="true"></div>
@@ -141,7 +141,7 @@
       <div class="dialog-head">
         <div>
           <h2>Add podcast</h2>
-          <p>Paste a podcast website or RSS feed URL.</p>
+          <p>Paste a podcast website or RSS feed URL, then open it once or subscribe.</p>
         </div>
         <button class="icon-button" type="button" data-dialog-close aria-label="Close"><i data-lucide="x"></i></button>
       </div>
@@ -153,7 +153,8 @@
       <div id="feedChoices" class="feed-choices hidden" aria-live="polite"></div>
       <div class="dialog-actions">
         <button class="secondary-button" type="button" data-dialog-close>Cancel</button>
-        <button class="primary-button" id="addFeedSubmit" type="submit" value="default"><span>Add</span></button>
+        <button class="secondary-button" type="submit" data-add-mode value="open"><i data-lucide="external-link"></i><span>Open</span></button>
+        <button class="primary-button" id="addFeedSubmit" type="submit" data-add-mode value="subscribe"><i data-lucide="rss"></i><span>Subscribe</span></button>
       </div>
     </form>
   </dialog>
@@ -220,6 +221,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script src="app.js?v=0.2.9"></script>
+  <script src="podcast-add-mode.js?v=0.2.10"></script>
+  <script src="app.js?v=0.2.10"></script>
 </body>
 </html>

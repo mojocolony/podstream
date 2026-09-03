@@ -1,4 +1,4 @@
-# Podstream v0.2.9
+# Podstream v0.2.10
 
 A deliberately small podcast web app.
 
@@ -48,6 +48,14 @@ Processing occurs locally while audio streams. Some podcast hosts do not permit 
 
 
 
+
+
+## v0.2.10
+
+- Add Podcast now offers **Open** and **Subscribe**.
+- **Open** loads a podcast and its episodes without adding it to the Podcasts library or refreshing it later.
+- One-off episodes stay transient unless played or starred; played/starred episodes are retained in the episode archive so History and Starred can sync.
+- Existing subscriptions opened through the one-off action simply open their normal podcast episode view.
 
 ## v0.2.9
 
